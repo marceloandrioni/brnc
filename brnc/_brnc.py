@@ -5,7 +5,7 @@
 
 __all__ = ["index_of_valid_value_along_axis",
            "valid_value_along_axis",
-           "BrDA"]
+           "length_to_slices_of_indexes"]
 
 # %reset -f
 
@@ -120,22 +120,55 @@ def valid_value_along_axis(arr: np.ndarray,
 
     >>> valid_value_along_axis(arr, axis=1, position='last')
     array([ 5.,  8.,  4., nan])
+
     """
 
     indexes = index_of_valid_value_along_axis(arr,
                                               axis=axis,
                                               position=position)
 
-    sizes = indexes.shape
-
-    other_axes = np.ogrid[tuple([slice(size) for size in sizes])]
-    # other_axes = np.meshgrid(*[range(size) for size in sizes],
+    other_axes = np.ogrid[tuple([slice(size) for size in indexes.shape])]
+    # other_axes = np.meshgrid(*[range(size) for size in indexes.shape],
     #                          sparse=True,
     #                          indexing='ij')
 
     other_axes.insert(axis, indexes)
 
     return np.where(indexes < 0, np.nan, arr[tuple(other_axes)])
+
+
+def length_to_slices_of_indexes(length: int, step: int) -> iter:
+    """
+    Convert length to slices of indexes using step.
+
+    Parameters
+    ----------
+    length : int
+        The total length to convert into slices of indexes.
+    step : int
+        The step for each slice.
+
+    Yields
+    ------
+    slice
+        A slice representing the indexes based on the specified step.
+
+    Examples
+    --------
+    >>> for s in length_to_slices_of_indexes(14, 4):
+    ...     print(s)
+    slice(0, 4, None)
+    slice(4, 8, None)
+    slice(8, 12, None)
+    slice(12, 14, None)
+
+    >>> list(length_to_slices_of_indexes(14, 4))
+    [slice(0, 4, None), slice(4, 8, None), slice(8, 12, None), slice(12, 14, None)]
+
+    """
+
+    for arr in np.array_split(range(length), range(step, length, step)):
+        yield slice(arr[0], arr[-1] + 1)
 
 
 @xr.register_dataarray_accessor("br")
@@ -271,4 +304,3 @@ class BrDA:
             axis=axis,
             keep_attrs=True,
             position=position)
-
