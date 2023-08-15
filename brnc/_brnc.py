@@ -67,6 +67,8 @@ def index_of_valid_value_along_axis(arr: np.ndarray,
 
     """
 
+    _ = int(str(axis))
+
     ones = np.ones(arr.shape)
 
     valid = np.where(~np.isnan(arr), ones, np.nan)
@@ -123,6 +125,8 @@ def valid_value_along_axis(arr: np.ndarray,
 
     """
 
+    _ = int(str(axis))
+
     indexes = index_of_valid_value_along_axis(arr,
                                               axis=axis,
                                               position=position)
@@ -166,6 +170,9 @@ def length_to_slices_of_indexes(length: int, step: int) -> iter:
     [slice(0, 4, None), slice(4, 8, None), slice(8, 12, None), slice(12, 14, None)]
 
     """
+
+    _ = int(str(length))
+    _ = int(str(step))
 
     for arr in np.array_split(range(length), range(step, length, step)):
         yield slice(arr[0], arr[-1] + 1)
@@ -219,22 +226,17 @@ class BrDA:
         return pd.api.types.is_numeric_dtype(self.da)
 
     def index_of_valid_value_along_dimension(self,
-                                             dim: Optional[str] = None,
-                                             axis: Optional[int] = None,
+                                             dim: str,
                                              position: str = 'first',
                                              ) -> xr.DataArray:
         """
         Get the index of the first or last valid value along a specific
-        dimension or axis.
+        dimension.
 
         Parameters
         ----------
         dim : str, optional
             The name of the dimension along which to get the index.
-            Either `dim` or `axis` must be provided.
-        axis : int, optional
-            The axis along which to get the index.
-            Either `dim` or `axis` must be provided.
         position : str, optional
             Specifies whether to retrieve the index of the first or last valid
             value along the dimension or axis.
@@ -248,9 +250,6 @@ class BrDA:
 
         """
 
-        if not any([dim, axis]):
-            self.err('dim or axis argument must be supplied')
-
         # Note: if da is a <class 'dask.array.core.Array'>, the code fails with:
         # "NotImplementedError: Don't yet support nd fancy indexing"
         # so call load to make sure da is a np.array with data in memory.
@@ -258,26 +257,20 @@ class BrDA:
         return self.da.br.load().reduce(
             index_of_valid_value_along_axis,
             dim=dim,
-            axis=axis,
             keep_attrs=True,
             position=position)
 
     def valid_value_along_dimension(self,
-                                    dim: Optional[str] = None,
-                                    axis: Optional[int] = None,
+                                    dim: str,
                                     position: str = 'first',
                                     ) -> xr.DataArray:
         """
-        Get the first or last valid value along a specific dimension or axis.
+        Get the first or last valid value along a specific dimension.
 
         Parameters
         ----------
         dim : str, optional
             The name of the dimension along which to get the value.
-            Either `dim` or `axis` must be provided.
-        axis : int, optional
-            The axis along which to get the value.
-            Either `dim` or `axis` must be provided.
         position : str, optional
             Specifies whether to retrieve the first or last valid value along
             the dimension or axis.
@@ -291,9 +284,6 @@ class BrDA:
 
         """
 
-        if not any([dim, axis]):
-            self.err('dim or axis argument must be supplied')
-
         # Note: if da is a <class 'dask.array.core.Array'>, the code fails with:
         # "NotImplementedError: Don't yet support nd fancy indexing"
         # so call load to make sure da is a np.array with data in memory.
@@ -301,6 +291,5 @@ class BrDA:
         return self.da.br.load().reduce(
             valid_value_along_axis,
             dim=dim,
-            axis=axis,
             keep_attrs=True,
             position=position)
