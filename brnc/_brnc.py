@@ -3,17 +3,15 @@
 """
 """
 
-__all__ = ["index_of_valid_value_along_axis",
-           "valid_value_along_axis",
-           "length_to_slices_of_indexes"]
+__all__ = [""]
 
-# %reset -f
 
 from typing import Union, Optional, Iterator
 from functools import singledispatch
 import itertools
 import datetime
 import time
+import re
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -38,6 +36,78 @@ INT_FLOAT = Union[int, float]
 INT_FLOAT_DT64 = Union[int, float, np.datetime64]
 
 DX = Union[xr.DataArray, xr.Dataset]
+
+
+def number2int(x: INT_FLOAT) -> int:
+    """
+    Convert number to an integer without precision loss.
+
+    Parameters
+    ----------
+    x : int, float
+        The number to be converted.
+
+    Returns
+    -------
+    out : int
+        The converted number as an integer.
+
+    Examples
+    --------
+    >>> number2int(10)
+    10
+
+    >>> number2int(3.14)
+    ValueError: Number 3.14 can't be cast to int without precision loss
+
+    """
+
+    if x - int(x):
+        raise ValueError("Number {x} can't be cast to int without precision loss")
+    return int(x)
+
+
+def parse_file_size(size: str) -> int:
+    """
+    Convert a file size in human-readable format to bytes.
+
+    Parameters
+    ----------
+    size : str
+        The file size in human-readable format, e.g., "10KB", "2.5GB".
+
+    Returns
+    -------
+    size_in_bytes: int
+        The file size in bytes.
+
+    Examples
+    --------
+    >>> parse_file_size("10KB")
+    10240
+
+    >>> parse_file_size("2.5GB")
+    2684354560
+
+    """
+
+    # Reference: https://stackoverflow.com/a/60708339/9707202
+    # Author: https://stackoverflow.com/users/2002471/chicks
+
+    units = {"B": 1,
+             "KB": 2**10,
+             "MB": 2**20,
+             "GB": 2**30,
+             "TB": 2**40}
+
+    size = size.upper()
+
+    if not re.match(r' ', size):
+        size = re.sub(r'([KMGT]?B)', r' \1', size)
+
+    number, unit = [string.strip() for string in size.split()]
+
+    return int(float(number) * units[unit])
 
 
 def index_of_valid_value_along_axis(arr: np.ndarray,
@@ -195,22 +265,20 @@ def length_to_slices_of_indexes(length: int, step: int
 
 def shape2chunk(*,
                 shape: tuple[int, ...],
-                size: int,
+                numel: int,
                 preferred_axes: Optional[list] = None,
                 preferred_in_order: bool = False
                 ) -> tuple[int, ...]:
     """
-    Calculate how to best split a array with shape `shape` in smaller chunks
-    so that the number of elements in each chunk is closest and less or equal
-    to `size`.
+    Calculate how to best split a np.ndarray in smaller chunks.
 
     Parameters
     ----------
     shape : tuple
         The shape of a np.ndarray, e.g.: `arr.shape`
-    size : int
+    numel : int
         Maximum number of elements in the resulting chunk, e.g.:
-        `chunk[0] * chunk[1] * ... chunk[N] <= size`
+        `chunk[0] * chunk[1] * ... chunk[N] <= numel`
     preferred_axes : list, optional
         A list of preferred axes for chunking, by default None.
     preferred_in_order : bool, optional
@@ -223,28 +291,33 @@ def shape2chunk(*,
 
     Notes
     -----
-    This function attempts to find a "balanced" chunk shape, not simply the one
-    closest to size, e.g.: for a array with shape (1000, 30, 200, 100) and
-    desired chunk size 1024, a balanced chunk shape is (6, 6, 5, 5) with 900
-    elements, while the closest solution would be an unbalanced (1024, 1, 1, 1).
+    This function attempts to find a "balanced" solution, not simply the
+    "best" one, e.g.: for a array with shape (1000, 30, 200, 100) and a goal
+    of 1024 elements, a "balanced" solution is (6, 6, 5, 5) -> 900, while
+    the "best" solution would be an unbalanced (1024, 1, 1, 1) -> 1024.
 
     Examples
     --------
-    >>> shape2chunk(shape=(1000, 30, 200, 100), size=1024)
+    >>> shape2chunk(shape=(1000, 30, 200, 100), numel=1024)
     (6, 6, 5, 5)
 
-    >>> shape2chunk(shape=(1000, 30, 200, 100), size=1024,
+    >>> shape2chunk(shape=(1000, 30, 200, 100), numel=1024,
     ...             preferred_axes=[0, 1])
     (34, 30, 1, 1)
 
-    >>> shape2chunk(shape=(1000, 30, 200, 100), size=1024,
+    >>> shape2chunk(shape=(1000, 30, 200, 100), numel=1024,
     ...             preferred_axes=[0, 1], preferred_in_order=True)
     (1000, 1, 1, 1)
 
     """
 
     _ = [int(str(size)) for size in shape]
-    _ = int(str(size))
+    if 0 in shape:
+        raise ValueError("No axis can have size 0")
+
+    _ = int(str(numel))
+    if not numel:
+        raise ValueError("Number of elements can't be zero")
 
     if preferred_axes:
         preferred_axes = ([[axis] for axis in preferred_axes]
@@ -261,12 +334,12 @@ def shape2chunk(*,
         rngs2 = [rng if axis in axes else range(rng.start, rng.start)
                  for axis, rng in enumerate(rngs)]
 
-        chunks = _ranges2product(rngs2, size)
+        chunks = _ranges2product(rngs2, numel)
 
         rngs = [range(chunks[axis], chunks[axis]) if axis in axes else rng
                 for axis, rng in enumerate(rngs)]
 
-    return _ranges2product(rngs, size)
+    return _ranges2product(rngs, numel)
 
 
 def _ranges2product(rngs: list[range],
@@ -289,6 +362,13 @@ def _ranges2product(rngs: list[range],
         Tuple with the value in each range so that the product between the
         values is closest and less or equall than prod.
 
+    Notes
+    -----
+    This function attempts to find a "balanced" solution, not simply the
+    "best" one, e.g.: for a array with shape (1000, 30, 200, 100) and a goal
+    of 1024 elements, a "balanced" solution is (6, 6, 5, 5) -> 900, while
+    the "best" solution would be an unbalanced (1024, 1, 1, 1) -> 1024.
+
     Examples
     --------
     >>> rngs = range(1, 10), range(2, 15), range(4, 20)
@@ -305,9 +385,11 @@ def _ranges2product(rngs: list[range],
         raise ValueError(
             "The smaller product between the ranges is greater than prod")
 
-    arr = np.ones((len(stops), max_size)).cumsum(axis=1).astype(int).T
-
-    arr = np.clip(arr, a_min=starts, a_max=stops)
+    arr = (np.ones((len(stops), max_size))
+           .cumsum(axis=1)
+           .astype(int)
+           .T
+           .clip(min=starts, max=stops))
 
     delta = arr.prod(axis=1) - prod
 
@@ -329,7 +411,8 @@ def _ranges2product(rngs: list[range],
 @singledispatch
 def any2datetime(dt: ANY2DATETIME,
                  dt_fmt: Optional[str] = None) -> datetime.datetime:
-    """Convert `dt` to datetime.datetime object.
+    """
+    Convert `dt` to datetime.datetime object.
 
     Parameters
     ----------
@@ -541,3 +624,169 @@ class BrDA:
             dim=dim,
             keep_attrs=True,
             position=position)
+
+    def chunk(self,
+              preferred_dims: Optional[list[str]] = None,
+              preferred_in_order: bool = False,
+              size: int = 4096):
+        """
+        Set the chunks.
+
+        This is useful to improve IO when writing/reading a NetCDF file. The
+        chunks tell how the N dimension data matrix will be split in smaller
+        blocks/chunks to improve IO.
+
+        Parameters
+        ----------
+        preferred_dims : list, optional
+            List of preferred dimensions to use for chunking. This is
+            useful if the user know in advance that a DataArray will be most
+            accessed to retrieve time-series/time-profile-series for a location
+            or to retrieve spatial horizontal sections (e.g. to plot a map),
+            e.g.: assuming a 4D (time, depth, lat, lon) DataArray
+
+            * if the user wants to retrieve time series with greater efficiency,
+            preferred_dims=['time'] should be used
+
+            * for time-profile-series, preferred_dims=['time', 'depth']
+
+            * for horizontal (lat x lon) sections,
+            preferred_dims=['latitude', 'longitude']
+
+            This will increase the chunkshape in the chosen dimension (while
+            reducing in the others) to reduce the number of necessary disk
+            access calls. If None, treat all dimensions equally.
+            Default: None
+        preferred_in_order : bool, optional
+            Flag indicating whether the preferred dimensions should be chunked
+            in order. If there is more than one dimension in `preferred_dims`
+            and preferred_in_order is True, optimize as much as possible the
+            first dimension given, then the second dimension and so on. If
+            preferred_in_order is False, all the dimensions in preferred_dims
+            are optimized equally.
+        size : int, optional
+            Maximum size in bytes of individual chunks. Best results are
+            obtained using a size equal to a disk block size (4096B = 4KB).
+            Default: 4096
+
+        Returns
+        -------
+        chunked : xarray.DataArray
+            Chunked DataArray.
+            `chunkshape[0] * chunkshape[1] * ... chunkshape[N] * itemsize`
+            should be less or equall to `size`.
+
+        Notes
+        -----
+        This function attempts to find a "balanced" solution, not simply the
+        "best" one, e.g.: for a array with shape (1000, 30, 200, 100) and a goal
+        of 1024 elements, a "balanced" solution is (6, 6, 5, 5) -> 900, while
+        the "best" solution would be an unbalanced (1024, 1, 1, 1) -> 1024.
+
+        Examples
+        --------
+        >>> ds = xr.tutorial.load_dataset("eraint_uvz")
+        >>> da = ds["u"].br.chunk(preferred_dims=["latitude", "longitude"])
+        >>> da.encoding["chunksizes"]
+        (1, 1, 45, 45)
+
+        """
+
+        # references:
+        # https://www.unidata.ucar.edu/blogs/developer/en/entry/chunking_data_why_it_matters
+        # https://www.unidata.ucar.edu/blogs/developer/en/entry/chunking_data_choosing_shapes
+        # https://www.unidata.ucar.edu/software/netcdf/workshops/most-recent/nc4chunking/index.html
+        # https://www.unidata.ucar.edu/software/netcdf/docs/netcdf_perf_chunking.html
+        # https://www.unidata.ucar.edu/blog_content/data/2013/chunk_shape_3D.py
+        # https://gist.github.com/feliperiosg/21872715b2de8300f0cb52086f363d6b
+        # http://wiki.seas.harvard.edu/geos-chem/index.php/Working_with_netCDF_data_files#Chunking_and_deflating_a_netCDF_file_to_improve_I.2FO
+        #
+        # following
+        # https://gist.github.com/feliperiosg/21872715b2de8300f0cb52086f363d6b
+        # 'good shape' for chunks means that the number of chunks accessed to read
+        # either kind of 1D or 2D subset is approximately equal, and the size of
+        # each chunk (uncompressed) is no more than chunkSize, which is often a disk
+        # block size.
+        #
+        # To be sure of disk block size
+        # sudo blockdev --getbsz /dev/sdX
+        # but it is probably 4096 bytes = 4 KB
+        #
+        # The block size is not a "hard" threshold, it is just a recommendation.
+        # It is possible to user greater or smaller values (e.g. use
+        # [1, lat_fullsize, lon_fullsize] to retrieve the whole "map")
+        #
+        # For a dataset with hourly single level data on a lat/177 x lon/173 grid,
+        # the retrieval time for one year (~8760 times) of monthly aggregated files
+        # in THREDDS was:
+        #   simultaneous retrieval of 8 variables:
+        #     50 seconds using _ChunkSizes = 1, 177, 173
+        #     11 seconds using _ChunkSizes = 744, 2, 1   (4.54x faster)
+        #   simultaneous retrieval of 2 variables:
+        #     12 seconds using _ChunkSizes = 1, 177, 173
+        #     2.7 seconds using _ChunkSizes = 744, 2, 1   (4.44x faster)
+        #
+        # For a dataset of 12 monthly files, each with dimensions:
+        # time = ~242 ;
+        # depth = 40 ;
+        # latitude = 126 ;
+        # longitude = 175 ;
+        # aggregated in THREDDS and the simultaneous retrieval of 2 variables (U and V):
+        # 6.3 to 6.5s   retrieving 3d current profile in files optimized with chuncking along tz (78, 13, 1, 1)
+        # 3.8 to 4.2s   retrieving 2d surface current in files optimized with chuncking along tz
+        # 7.8 to 8.2s   retrieving 3d current profile in files optimized with chuncking along t (242, 1, 2, 2)
+        # 0.9 to 1.5s   retrieving 2d surface current in files optimized with chuncking along t
+        # 14.2 to 14.7s retrieving 3d current profile in files optimized with chuncking along yx (1, 1, 27, 37)
+        # 5.1 to 5.8s   retrieving 2d surface current in files optimized with chuncking along yx
+        #
+        # If the 3d dataset will be used primarily to retrieve only the surface
+        # current, it may be worth it to optimize only along the time dimension
+        # (t=1.5s vs tz=4.2s), considering the retrieval is almost 3x faster and
+        # the full 3d retrieval is only 25% slower (t=8.2s vs tz=6.5s).
+        #
+        # Note: this probably could be done in a more elegant way using a
+        # scipy.optimize.minimize (or similar), but the problem is that the
+        # chunks must be integers.
+
+        # get size (in bytes) of individual values. Get dtype from
+        # da.encoding["dtype"] if available, else, use da.dtype. Prefer
+        # encoding because this is the dtype that will be used when saving the
+        # data to disk.
+        itemsize = self.da.encoding.get("dtype",
+                                        self.da.dtype).itemsize
+
+        if not itemsize:
+            self.err("itemsize can't be zero or None")
+
+        if 0 in self.da.sizes.values():
+            self.err("no dimension can be less than 1")
+
+        numel = number2int(size / itemsize)
+        if numel < 1:
+            self.err("size divided by itemsize can't be less than 1")
+
+        preferred_axes = None
+        if preferred_dims:
+            preferred_axes = [self.da.get_axis_num(dim)
+                              for dim in preferred_dims]
+
+        chunks = dict(zip(
+            self.da.dims,
+            shape2chunk(shape=self.da.shape,
+                        numel=numel,
+                        preferred_axes=preferred_axes,
+                        preferred_in_order=preferred_in_order)))
+
+        self.info(f"setting chunks {chunks}")
+
+        # keep the original da as is
+        da = self.da.copy()
+
+        # need to remove so that chunkshape is really applied
+        for x in ["original_shape", "_ChunkSize", "_ChunkSizes"]:
+            _ = da.encoding.pop(x, None)
+
+        # setting the chunksize directly instead of using da.chunk
+        da.encoding["chunksizes"] = tuple(chunks.values())
+
+        return da
