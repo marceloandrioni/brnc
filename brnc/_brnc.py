@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-"""
 
-__all__ = [""]
+__all__ = ["HOW_TO_USE_IT"]
 
 
 from typing import Union, Optional, Iterator
@@ -36,6 +34,10 @@ INT_FLOAT = Union[int, float]
 INT_FLOAT_DT64 = Union[int, float, np.datetime64]
 
 DX = Union[xr.DataArray, xr.Dataset]
+
+
+HOW_TO_USE_IT = ("Importing this module automatically adds a 'br' accessor to "
+                 "xarray DataArray and Dataset, e.g.: da.br and ds.br")
 
 
 def number2int(x: INT_FLOAT) -> int:
@@ -298,16 +300,16 @@ def shape2chunk(*,
 
     Examples
     --------
-    >>> shape2chunk(shape=(1000, 30, 200, 100), numel=1024)
+    >>> shape2chunk(shape=(400, 30, 200, 100), numel=1024)
     (6, 6, 5, 5)
 
-    >>> shape2chunk(shape=(1000, 30, 200, 100), numel=1024,
+    >>> shape2chunk(shape=(400, 30, 200, 100), numel=1024,
     ...             preferred_axes=[0, 1])
     (34, 30, 1, 1)
 
-    >>> shape2chunk(shape=(1000, 30, 200, 100), numel=1024,
+    >>> shape2chunk(shape=(400, 30, 200, 100), numel=1024,
     ...             preferred_axes=[0, 1], preferred_in_order=True)
-    (1000, 1, 1, 1)
+    (400, 2, 1, 1)
 
     """
 
@@ -777,7 +779,9 @@ class BrDA:
                         preferred_axes=preferred_axes,
                         preferred_in_order=preferred_in_order)))
 
-        self.info(f"setting chunks {chunks}")
+        self.info(
+            f"setting chunks '{chunks}' with {np.r_[chunks].prod() * itemsize} "
+            f"bytes ({np.r_[chunks].prod()} x {itemsize} bytes)")
 
         # keep the original da as is
         da = self.da.copy()
