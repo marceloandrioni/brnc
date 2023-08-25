@@ -4,7 +4,7 @@
 __all__ = ["HOW_TO_USE_IT"]
 
 
-from typing import Optional
+from typing import Optional, Union
 import time
 import numpy as np
 import pandas as pd
@@ -30,11 +30,139 @@ HOW_TO_USE_IT = ("Importing this module automatically adds a 'br' accessor to "
                  "xarray DataArray and Dataset, e.g.: da.br and ds.br")
 
 
-@xr.register_dataarray_accessor("br")
-class BrDA:
+class DaDsMixin:
+    """
+    Methods common to DataArrays and Datasets.
+    """
 
-    def __init__(self, xarray_obj):
+    def __init__(self, xarray_obj) -> None:
         self._obj = xarray_obj
+
+    @property
+    def dx(self) -> Union[xr.DataArray, xr.Dataset]:
+        return self._obj
+
+    def sel_nearest(self,
+                    keep_as_dim: bool = False,
+                    **kwargs: INT_FLOAT_ANY2DT
+                    ) -> Union[xr.DataArray, xr.Dataset]:
+        """
+        Select the nearest data point to the specified value along the dimension.
+
+        Parameters
+        ----------
+        keep_as_dim : bool, optional
+            Flag indicating whether to keep the dimension for the selected
+            value as a separate dimension.
+        **kwargs : int, float, datetime.datetime, datetime.date, np.datetime64,
+                   str
+            Keyword arguments representing the dimension and corresponding
+            value.
+
+        Returns
+        -------
+        dx : xr.DataArray or xr.Dataset
+            DataArray/Dataset with the nearest data point. Selected dimensions
+            will be returned with size 1 if keep_as_dim`is True, else, the
+            dimension will be dropped.
+
+        Examples
+        --------
+        >>> ds = xr.tutorial.load_dataset("air_temperature_gradient")
+        >>> ds.br.sel_nearest(time="2013-01-02 01:00", lat=51, lon=246)
+
+        """
+
+        def f(x):
+            return [x] if keep_as_dim else x
+
+        isel_kwargs = {dim: f(da2axis(self.dx[dim]).find_index(value))
+                       for dim, value in kwargs.items()}
+
+        return self.dx.isel(**isel_kwargs)
+
+    def sel_around(self,
+                   **kwargs: INT_FLOAT_ANY2DT
+                   ) -> Union[xr.DataArray, xr.Dataset]:
+        """
+        Select the two data points around the specified value along the
+        dimension.
+
+        Parameters
+        ----------
+        **kwargs : int, float, datetime.datetime, datetime.date, np.datetime64,
+                   str
+            Keyword arguments representing the dimension and corresponding
+            values.
+
+        Returns
+        -------
+        dx : xr.DataArray or xr.Dataset
+            DataArray/Dataset with selected data points. Selected dimensions
+            will be returned with size 2.
+
+        Examples
+        --------
+        >>> ds = xr.tutorial.load_dataset("air_temperature_gradient")
+        >>> ds.br.sel_around(time="2013-01-02 01:00", lat=51, lon=246)
+
+        """
+
+        isel_kwargs = {dim: da2axis(self.dx[dim]).find_indexes(value)
+                       for dim, value in kwargs.items()}
+
+        return self.dx.isel(**isel_kwargs)
+
+    def sel_slice(self,
+                  force_inclusive: bool = False,
+                  **kwargs: slice
+                  ) -> Union[xr.DataArray, xr.Dataset]:
+        """
+        Select a slice along the specified dimension.
+
+        Parameters
+        ----------
+        force_inclusive : bool, optional
+            Flag indicating whether the slice should be expanded to forcefully
+            include the values at the start and end of the slice.
+        **kwargs : slice
+            Keyword arguments representing the dimension and corresponding
+            slice.
+
+        Returns
+        -------
+        dx : xr.DataArray or xr.Dataset
+            Sliced DataArray/Dataset
+
+        Examples
+        --------
+        >>> ds = xr.tutorial.load_dataset("air_temperature_gradient")
+
+        >>> ds.br.sel_slice(time=slice("2013-01-02 01:00",
+                                       "2013-04-03 03:00"),
+                            lat=slice(51, 59),
+                            lon=slice(246, 254))
+
+        >>> ds.br.sel_slice(time=slice("2013-01-02 01:00",
+                                       "2013-04-03 03:00"),
+                            lat=slice(51, 59),
+                            lon=slice(246, 254),
+                            force_inclusive=True)
+
+        """
+
+        isel_kwargs = dict()
+        for dim, slc in kwargs.items():
+            axis = da2axis(self.dx[dim])
+            isel_kwargs[dim] = axis.find_indexes_between(slc.start,
+                                                         slc.stop,
+                                                         force_inclusive)
+
+        return self.dx.isel(**isel_kwargs)
+
+
+@xr.register_dataarray_accessor("br")
+class BrDA(DaDsMixin):
 
     @property
     def da(self) -> xr.DataArray:
@@ -46,24 +174,27 @@ class BrDA:
 
     def err(self, msg: str) -> None:
         """Raise a ValueError with message msg."""
-        raise ValueError(f"DataArray '{self.name}': " + msg)
+        raise ValueError(f"DataArray '{self.name}': {msg}")
 
     def info(self, msg: str) -> None:
         """Info message msg."""
-        log.info(f"DataArray '{self.name}': " + msg)
+        log.info(f"DataArray '{self.name}': {msg}")
 
     def warn(self, msg: str) -> None:
         """Warning message msg."""
-        log.warning(f"DataArray '{self.name}': " + msg)
+        log.warning(f"DataArray '{self.name}': {msg}")
 
-    def load(self) -> xr.DataArray:
+    def load(self, **kwargs: int) -> xr.DataArray:
 
+        # just return it if it was already loaded
         if self.da._in_memory:
             return self.da
 
         self.info("loading data in memory")
 
-        return self.da.load()
+        # load the whole DataArray if no kwargs
+        if len(kwargs) == 0:
+            return self.da.load()
 
     @property
     def is_numeric(self) -> bool:
@@ -316,123 +447,22 @@ class BrDA:
 
         return da
 
-    def sel_nearest(self,
-                    keep_as_dim: bool = False,
-                    **kwargs: INT_FLOAT_ANY2DT
-                    ) -> xr.DataArray:
-        """
-        Select the nearest data point to the specified value along the dimension.
 
-        Parameters
-        ----------
-        keep_as_dim : bool, optional
-            Flag indicating whether to keep the dimension for the selected
-            value as a separate dimension.
-        **kwargs : int, float, datetime.datetime, datetime.date, np.datetime64,
-                   str
-            Keyword arguments representing the dimension and corresponding
-            value.
+@xr.register_dataset_accessor('br')
+class BrDS(DaDsMixin):
 
-        Returns
-        -------
-        da : xr.DataArray
-            Data array with the nearest data point. Selected dimensions will be
-            returned with size 1 if keep_as_dim`is True, else, the dimension
-            will be dropped.
+    @property
+    def ds(self) -> xr.DataArray:
+        return self._obj
 
-        Examples
-        --------
-        >>> ds = xr.tutorial.load_dataset("air_temperature")
-        >>> da = ds["air"]
-        >>> da.br.sel_nearest(time="2013-01-02 01:00", lat=51, lon=246)
+    def err(self, msg: str) -> None:
+        """Raise a ValueError with message msg."""
+        raise ValueError(f"Dataset: {msg}")
 
-        """
+    def info(self, msg: str) -> None:
+        """Info message msg."""
+        log.info(f"Dataset: {msg}")
 
-        def f(x):
-            return [x] if keep_as_dim else x
-
-        isel_kwargs = {dim: f(da2axis(self.da[dim]).find_index(value))
-                       for dim, value in kwargs.items()}
-
-        return self.da.isel(**isel_kwargs)
-
-    def sel_around(self,
-                   **kwargs: INT_FLOAT_ANY2DT
-                   ) -> xr.DataArray:
-        """
-        Select the two data points around the specified value along the
-        dimension.
-
-        Parameters
-        ----------
-        **kwargs : int, float, datetime.datetime, datetime.date, np.datetime64,
-                   str
-            Keyword arguments representing the dimension and corresponding
-            values.
-
-        Returns
-        -------
-        da : xr.DataArray
-            Data array with selected data points. Selected dimensions will be
-            returned with size 2.
-
-        Examples
-        --------
-        >>> ds = xr.tutorial.load_dataset("air_temperature")
-        >>> da = ds["air"]
-        >>> da.br.sel_around(time="2013-01-02 01:00", lat=51, lon=246)
-
-        """
-
-        isel_kwargs = {dim: da2axis(self.da[dim]).find_indexes(value)
-                       for dim, value in kwargs.items()}
-
-        return self.da.isel(**isel_kwargs)
-
-    def sel_slice(self,
-                  force_inclusive: bool = False,
-                  **kwargs: slice
-                  ) -> xr.DataArray:
-        """
-        Select a slice along the specified dimension.
-
-        Parameters
-        ----------
-        force_inclusive : bool, optional
-            Flag indicating whether the slice should be expanded to forcefully
-            include the values at the start and end of the slice.
-        **kwargs : slice
-            Keyword arguments representing the dimension and corresponding
-            slice.
-
-        Returns
-        -------
-        da : xr.DataArray
-            Sliced data array.
-
-        Examples
-        --------
-        >>> ds = xr.tutorial.load_dataset("air_temperature")
-        >>> da = ds["air"]
-
-        >>> ds["air"].br.sel_slice(time=slice("2013-01-02 01:00",
-                                              "2013-04-03 03:00"),
-                                   lat=slice(51, 59),
-                                   lon=slice(246, 254))
-
-        >>> ds["air"].br.sel_slice(time=slice("2013-01-02 01:00",
-                                              "2013-04-03 03:00"),
-                                   lat=slice(51, 59),
-                                   lon=slice(246, 254),
-                                   force_inclusive=True)
-
-        """
-
-        isel_kwargs = dict()
-        for dim, slc in kwargs.items():
-            axis = da2axis(self.da[dim])
-            isel_kwargs[dim] = axis.find_indexes_between(slc.start,
-                                                         slc.stop,
-                                                         force_inclusive)
-
-        return self.da.isel(**isel_kwargs)
+    def warn(self, msg: str) -> None:
+        """Warning message msg."""
+        log.warning(f"Dataset: {msg}")
