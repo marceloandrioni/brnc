@@ -14,8 +14,9 @@ import xarray as xr
 
 from ._axis import da2axis
 from ._common import (index_of_valid_value_along_axis, valid_value_along_axis,
-                      number2int, shape2chunk, length_to_slices_of_indexes)
-from ._types import INT_FLOAT_ANY2DT, LIST_TUPLE
+                      number2int, shape2chunk, length_to_slices_of_indexes,
+                      parse_file_size)
+from ._types import INT_FLOAT_ANY2DT
 
 import logging
 
@@ -311,7 +312,7 @@ class BrDA(DaDsMixin):
 
     def chunk(self,
               preferred_dims: Optional[list[Union[str, list]]] = None,
-              size: int = 4096
+              size: Union[int, str] = 4096
               ) -> xr.DataArray:
         """
         Set the chunks.
@@ -352,9 +353,10 @@ class BrDA(DaDsMixin):
             reducing in the others) to reduce the number of necessary disk
             access calls. If None, treat all dimensions equally.
             Default: None
-        size : int, optional
-            Maximum size in bytes of individual chunks. Best results are
-            obtained using a size equal to a disk block size (4096B = 4KB).
+        size : int or str, optional
+            Maximum size of individual chunks. Best results are obtained using
+            a size equal to a disk block size (4096B = 4KB), but this is not a
+            "hard" threshold.
             Default: 4096
 
         Returns
@@ -450,6 +452,8 @@ class BrDA(DaDsMixin):
 
         if 0 in self.da.sizes.values():
             self.err("no dimension can be less than 1")
+
+        size = parse_file_size(size) if isinstance(size, str) else size
 
         numel = number2int(size / itemsize)
         if numel < 1:

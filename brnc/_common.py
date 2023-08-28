@@ -11,8 +11,6 @@ import numpy as np
 import pandas as pd
 import itertools
 
-from ._types import LIST_TUPLE
-
 
 def number2int(x: Union[int, float]) -> int:
     """
