@@ -16,3 +16,6 @@ INT_FLOAT = Union[int, float]
 INT_FLOAT_DT64 = Union[int, float, np.datetime64]
 
 INT_FLOAT_ANY2DT = Union[int, float, ANY2DT]
+
+# Sequence also allows str and bytes
+LIST_TUPLE = Union[list, tuple]

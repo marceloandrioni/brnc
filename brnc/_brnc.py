@@ -5,15 +5,17 @@ __all__ = ["HOW_TO_USE_IT"]
 
 
 from typing import Optional, Union
+import itertools
 import time
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import xarray as xr
 
 from ._axis import da2axis
 from ._common import (index_of_valid_value_along_axis, valid_value_along_axis,
-                      number2int, shape2chunk)
-from ._types import INT_FLOAT_ANY2DT
+                      number2int, shape2chunk, length_to_slices_of_indexes)
+from ._types import INT_FLOAT_ANY2DT, LIST_TUPLE
 
 import logging
 
@@ -196,6 +198,35 @@ class BrDA(DaDsMixin):
         if len(kwargs) == 0:
             return self.da.load()
 
+        # load the DataArray one slice at a time
+        slices = [length_to_slices_of_indexes(self.da[dim].size, step)
+                  for dim, step in kwargs.items()]
+
+        das = []
+        pbar = tqdm(list(itertools.product(*slices)))
+        for values in pbar:
+
+            d = dict(zip(kwargs.keys(), values))
+
+            msg = ", ".join([f"{dim}: [{s.start}, {s.stop})"
+                             for dim, s in d.items()])
+
+            pbar.set_description(f"{msg}")
+            das.append(self.da.isel(**d).load())
+
+            # time.sleep(0.1)
+
+        da = xr.combine_by_coords(das, combine_attrs="identical")
+
+        # xr.combine_by_coords returns a Dataset if da.name is not None
+        if isinstance(da, xr.Dataset):
+            da = da[list(da.data_vars)[0]]
+
+        # # sets the DataArray itself
+        # self._obj = da
+
+        return da
+
     @property
     def is_numeric(self) -> bool:
         """
@@ -279,8 +310,7 @@ class BrDA(DaDsMixin):
             position=position)
 
     def chunk(self,
-              preferred_dims: Optional[list[str]] = None,
-              preferred_in_order: bool = False,
+              preferred_dims: Optional[list[Union[str, list]]] = None,
               size: int = 4096
               ) -> xr.DataArray:
         """
@@ -293,31 +323,35 @@ class BrDA(DaDsMixin):
         Parameters
         ----------
         preferred_dims : list, optional
-            List of preferred dimensions to use for chunking. This is
-            useful if the user know in advance that a DataArray will be most
-            accessed to retrieve time-series/time-profile-series for a location
-            or to retrieve spatial horizontal sections (e.g. to plot a map),
-            e.g.: assuming a 4D (time, depth, lat, lon) DataArray
+            A list of preferred dimensions for chunking, by default None.
+            Dimensions are treated in order of preference unless inside a
+            sublist. In this case, they are treated with equal preferency, e.g.:
+
+            ["time"] -> allocate maximum possible to dimension time, then
+            allocate what is left "equally" to remaining axes.
+
+            [["longitude", "latitude"], "depth"] -> allocate "equally" to
+            dimensions "longitude" and "latitude", then allocate what is left
+            to dimension "depth", then allocate what is left "equally" to
+            remaining dimensions.
+
+            This is useful if the user know in advance that a DataArray will be
+            most accessed to retrieve time-series/time-profile-series for a
+            location or to retrieve spatial horizontal sections (e.g. to plot a
+            map), e.g.: assuming a 4D (time, depth, lat, lon) DataArray
 
             * if the user wants to retrieve time series with greater efficiency,
-            preferred_dims=['time'] should be used
+            preferred_dims=["time"] should be used
 
-            * for time-profile-series, preferred_dims=['time', 'depth']
+            * for time-profile-series, preferred_dims=[["time", "depth"]]
 
             * for horizontal (lat x lon) sections,
-            preferred_dims=['latitude', 'longitude']
+            preferred_dims=[["latitude", "longitude"]]
 
             This will increase the chunkshape in the chosen dimension (while
             reducing in the others) to reduce the number of necessary disk
             access calls. If None, treat all dimensions equally.
             Default: None
-        preferred_in_order : bool, optional
-            Flag indicating whether the preferred dimensions should be chunked
-            in order. If there is more than one dimension in `preferred_dims`
-            and preferred_in_order is True, optimize as much as possible the
-            first dimension given, then the second dimension and so on. If
-            preferred_in_order is False, all the dimensions in preferred_dims
-            are optimized equally.
         size : int, optional
             Maximum size in bytes of individual chunks. Best results are
             obtained using a size equal to a disk block size (4096B = 4KB).
@@ -339,10 +373,12 @@ class BrDA(DaDsMixin):
 
         Examples
         --------
-        >>> ds = xr.tutorial.load_dataset("eraint_uvz")
-        >>> da = ds["u"].br.chunk(preferred_dims=["latitude", "longitude"])
-        >>> da.encoding["chunksizes"]
-        (1, 1, 45, 45)
+        >>> ds = xr.tutorial.load_dataset("air_temperature")
+        >>> da = ds["air"]
+        >>> da.br.chunk(preferred_dims=["time"]).encoding["chunksizes"]
+        (2048, 1, 1)
+        >>> da.br.chunk(preferred_dims=[["lat", "lon"]]).encoding["chunksizes"]
+        (1, 25, 53)
 
         """
 
@@ -428,14 +464,14 @@ class BrDA(DaDsMixin):
             self.da.dims,
             shape2chunk(shape=self.da.shape,
                         numel=numel,
-                        preferred_axes=preferred_axes,
-                        preferred_in_order=preferred_in_order)))
+                        preferred_axes=preferred_axes)))
 
         self.info(
-            f"setting chunks '{chunks}' with {np.r_[chunks].prod() * itemsize} "
-            f"bytes ({np.r_[chunks].prod()} x {itemsize} bytes)")
+            f"setting chunks '{chunks}' with "
+            f"{np.r_[list(chunks.values())].prod() * itemsize} bytes "
+            f"({np.r_[list(chunks.values())].prod()} elements x {itemsize} bytes)")
 
-        # keep the original da as is
+        # keep the original DataArray as is
         da = self.da.copy()
 
         # need to remove so that chunkshape is really applied

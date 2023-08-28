@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from collections.abc import Iterable
 from typing import Union, Iterator, Optional
 from functools import singledispatch
 from itertools import accumulate
@@ -9,6 +10,8 @@ import datetime
 import numpy as np
 import pandas as pd
 import itertools
+
+from ._types import LIST_TUPLE
 
 
 def number2int(x: Union[int, float]) -> int:
@@ -238,8 +241,7 @@ def length_to_slices_of_indexes(length: int, step: int) -> Iterator[slice]:
 def shape2chunk(*,
                 shape: tuple[int, ...],
                 numel: int,
-                preferred_axes: Optional[list] = None,
-                preferred_in_order: bool = False
+                preferred_axes: Optional[list[Union[int, list]]] = None
                 ) -> tuple[int, ...]:
     """
     Calculate how to best split a np.ndarray in smaller chunks.
@@ -252,9 +254,16 @@ def shape2chunk(*,
         Maximum number of elements in the resulting chunk, e.g.:
         `chunk[0] * chunk[1] * ... chunk[N] <= numel`
     preferred_axes : list, optional
-        A list of preferred axes for chunking, by default None.
-    preferred_in_order : bool, optional
-        Specifies if the preferred axes should be in order, by default False.
+        A list of preferred axes for chunking, by default None. Axes are
+        treated in order of preference unless inside a sublist. In this case,
+        they are treated with equal preferency, e.g.:
+
+        [0, 1] -> allocate maximum possible to axis 0, then allocate whats is
+        left to axis 1, then allocate what is left "equally" to remaining axes.
+
+        [[2, 3], 1, 0] -> allocate "equally" to axes 2 and 3, then allocate
+        what is left to axis 1, then allocate what is left to axis 0, then
+        allocate what is left "equally" to remaining axes.
 
     Returns
     -------
@@ -274,12 +283,20 @@ def shape2chunk(*,
     (6, 6, 5, 5)
 
     >>> shape2chunk(shape=(400, 30, 200, 100), numel=1024,
-    ...             preferred_axes=[0, 1])
-    (34, 30, 1, 1)
+                    preferred_axes=[0, 1])
+    (400, 2, 1, 1)
 
     >>> shape2chunk(shape=(400, 30, 200, 100), numel=1024,
-    ...             preferred_axes=[0, 1], preferred_in_order=True)
-    (400, 2, 1, 1)
+                    preferred_axes=[[0, 1]])
+    (34, 30, 1, 1)
+
+    >>> shape2chunk(shape=(400, 30, 20, 10), numel=1024,
+                    preferred_axes=[[2, 3], 1, 0])
+    (1, 5, 20, 10)
+
+    >>> shape2chunk(shape=(400, 30, 20, 10), numel=1024,
+                    preferred_axes=[[2, 3], [1, 0]])
+    (2, 2, 20, 10)
 
     """
 
@@ -291,24 +308,24 @@ def shape2chunk(*,
     if not numel:
         raise ValueError("Number of elements can't be zero")
 
-    if preferred_axes:
-        preferred_axes = ([[axis] for axis in preferred_axes]
-                          if preferred_in_order
-                          else [preferred_axes])
-
-    else:
-        preferred_axes = []
+    preferred_axes = [] if preferred_axes is None else preferred_axes
 
     rngs = [range(1, size) for size in shape]
 
     for axes in preferred_axes:
 
-        rngs2 = [rng if axis in axes else range(rng.start, rng.start)
+        axes = axes if isinstance(axes, Iterable) else [axes]
+
+        rngs2 = [rng
+                 if axis in axes
+                 else range(rng.start, rng.start)
                  for axis, rng in enumerate(rngs)]
 
         chunks = _ranges2product(rngs2, numel)
 
-        rngs = [range(chunks[axis], chunks[axis]) if axis in axes else rng
+        rngs = [range(chunks[axis], chunks[axis])
+                if axis in axes
+                else rng
                 for axis, rng in enumerate(rngs)]
 
     return _ranges2product(rngs, numel)

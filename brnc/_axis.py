@@ -99,11 +99,11 @@ class AxisMixin:
                                                           force_inclusive)])
 
 
-class AxisInt(AxisMixin, pyinterp.AxisInt64):
+class AxisFloat(AxisMixin, pyinterp.Axis):
     pass
 
 
-class AxisFloat(AxisMixin, pyinterp.Axis):
+class AxisInt(AxisMixin, pyinterp.AxisInt64):
     pass
 
 
