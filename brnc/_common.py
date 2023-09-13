@@ -41,7 +41,44 @@ def number2int(x: Union[int, float]) -> int:
     return int(x)
 
 
-def parse_file_size(size: str) -> int:
+def file_size_to_human_size(size: int) -> str:
+    """
+    Convert a file size in bytes to human-readable format.
+
+    Parameters
+    ----------
+    size : int
+        The file size in bytes.
+
+    Returns
+    -------
+    human_size: str
+        The file size in human-readable format.
+
+    Examples
+    --------
+    >>> file_size_to_human_size(10240)
+    '10.0KB'
+
+    >>> file_size_to_human_size(2684354560)
+    '2.5GB'
+
+    """
+
+    # Reference: https://stackoverflow.com/a/1094933/9707202
+    # Author: https://stackoverflow.com/users/55246/sridhar-ratnakumar
+
+    _ = number2int(size)
+
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB"):
+        if abs(size) < 1024:
+            return f"{size:3.1f}{unit}"
+        size /= 1024
+
+    raise ValueError("Could not find a valid unit.")
+
+
+def human_size_to_file_size(size: str) -> int:
     """
     Convert a file size in human-readable format to bytes.
 
@@ -57,10 +94,10 @@ def parse_file_size(size: str) -> int:
 
     Examples
     --------
-    >>> parse_file_size("10KB")
+    >>> human_size_to_file_size("10KB")
     10240
 
-    >>> parse_file_size("2.5GB")
+    >>> human_size_to_file_size("2.5GB")
     2684354560
 
     """
@@ -72,12 +109,15 @@ def parse_file_size(size: str) -> int:
              "KB": 2**10,
              "MB": 2**20,
              "GB": 2**30,
-             "TB": 2**40}
+             "TB": 2**40,
+             "PB": 2**50,
+             "EB": 2**60,
+             "ZB": 2**70}
 
     size = size.upper()
 
     if not re.match(r' ', size):
-        size = re.sub(r'([KMGT]?B)', r' \1', size)
+        size = re.sub(r'([KMGTPEZ]?B)', r' \1', size)
 
     number, unit = [string.strip() for string in size.split()]
 

@@ -15,7 +15,7 @@ import xarray as xr
 from ._axis import da2axis
 from ._common import (index_of_valid_value_along_axis, valid_value_along_axis,
                       number2int, shape2chunk, length_to_slices_of_indexes,
-                      parse_file_size)
+                      file_size_to_human_size, human_size_to_file_size)
 from ._types import INT_FLOAT_ANY2DT
 
 import logging
@@ -193,7 +193,19 @@ class BrDA(DaDsMixin):
         if self.da._in_memory:
             return self.da
 
-        self.info("loading data in memory")
+        self.info("loading data in memory: "
+                  f"{file_size_to_human_size(self.da.nbytes)}")
+
+        return self.da.load()
+
+    def load_by_step(self, **kwargs: int) -> xr.DataArray:
+
+        # just return it if it was already loaded
+        if self.da._in_memory:
+            return self.da
+
+        self.info("loading data in memory: "
+                  f"{file_size_to_human_size(self.da.nbytes)}")
 
         # load the whole DataArray if no kwargs
         if len(kwargs) == 0:
@@ -203,8 +215,10 @@ class BrDA(DaDsMixin):
         slices = [length_to_slices_of_indexes(self.da[dim].size, step)
                   for dim, step in kwargs.items()]
 
+        slices_prod = list(itertools.product(*slices))
+
         das = []
-        pbar = tqdm(list(itertools.product(*slices)))
+        pbar = tqdm(slices_prod)
         for values in pbar:
 
             d = dict(zip(kwargs.keys(), values))
@@ -227,6 +241,13 @@ class BrDA(DaDsMixin):
         # self._obj = da
 
         return da
+
+    def load_by_size(self,
+                     preferred_dims: Optional[list[Union[str, list]]] = None,
+                     size: Union[int, str] = "10MB"
+                     ) -> xr.DataArray:
+
+        raise NotImplementedError()
 
     @property
     def is_numeric(self) -> bool:
@@ -453,7 +474,7 @@ class BrDA(DaDsMixin):
         if 0 in self.da.sizes.values():
             self.err("no dimension can be less than 1")
 
-        size = parse_file_size(size) if isinstance(size, str) else size
+        size = human_size_to_file_size(size) if isinstance(size, str) else size
 
         numel = number2int(size / itemsize)
         if numel < 1:
