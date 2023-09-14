@@ -155,26 +155,27 @@ class AxisTime(AxisMixin, pyinterp.TemporalAxis):
                                            force_inclusive=force_inclusive)
 
 
-def array2axis(arr: np.ndarray) -> Union[AxisFloat,
-                                         AxisInt,
-                                         AxisTime]:
+class AxisFactory:
 
-    errs = []
-    for Axis in [AxisFloat, AxisInt, AxisTime]:
-        try:
-            axis = Axis(arr)
-            break
-        except Exception as e:
-            errs.append(str(e))
-    else:
-        raise TypeError("Could not find a valid axis type. All attempts failed "
-                        "with the following errors:\n" + '\n'.join(errs))
+    def from_array(self, arr: np.ndarray) -> Union[AxisFloat,
+                                                   AxisInt,
+                                                   AxisTime]:
 
-    return axis
+        errs = []
+        for Axis in [AxisFloat, AxisInt, AxisTime]:
+            try:
+                axis = Axis(arr)
+                break
+            except Exception as e:
+                errs.append(str(e))
+        else:
+            raise TypeError("Could not find a valid axis type. All attempts failed "
+                            "with the following errors:\n" + '\n'.join(errs))
 
+        return axis
 
-def da2axis(da: xr.DataArray) -> Union[AxisFloat,
-                                       AxisInt,
-                                       AxisTime]:
+    def from_dataarray(self, da: xr.DataArray) -> Union[AxisFloat,
+                                                        AxisInt,
+                                                        AxisTime]:
 
-    return array2axis(da.values)
+        return self.from_array(da.values)

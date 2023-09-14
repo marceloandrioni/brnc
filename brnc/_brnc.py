@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from ._axis import da2axis
+from ._axis import AxisFactory
 from ._common import (index_of_valid_value_along_axis, valid_value_along_axis,
                       number2int, shape2chunk, length_to_slices_of_indexes,
                       file_size_to_human_size, human_size_to_file_size)
@@ -79,7 +79,9 @@ class DaDsMixin:
         def f(x):
             return [x] if keep_as_dim else x
 
-        isel_kwargs = {dim: f(da2axis(self.dx[dim]).find_index(value))
+        axsfac = AxisFactory()
+
+        isel_kwargs = {dim: axsfac.from_dataarray(self.dx[dim]).find_index(value)
                        for dim, value in kwargs.items()}
 
         return self.dx.isel(**isel_kwargs)
@@ -111,7 +113,9 @@ class DaDsMixin:
 
         """
 
-        isel_kwargs = {dim: da2axis(self.dx[dim]).find_indexes(value)
+        axsfac = AxisFactory()
+
+        isel_kwargs = {dim: axsfac.from_dataarray(self.dx[dim]).find_indexes(value)
                        for dim, value in kwargs.items()}
 
         return self.dx.isel(**isel_kwargs)
@@ -154,9 +158,11 @@ class DaDsMixin:
 
         """
 
+        axsfac = AxisFactory()
+
         isel_kwargs = dict()
         for dim, slc in kwargs.items():
-            axis = da2axis(self.dx[dim])
+            axis = axsfac.from_dataarray(self.dx[dim])
             isel_kwargs[dim] = axis.find_indexes_between(slc.start,
                                                          slc.stop,
                                                          force_inclusive)
@@ -244,10 +250,38 @@ class BrDA(DaDsMixin):
 
     def load_by_size(self,
                      preferred_dims: Optional[list[Union[str, list]]] = None,
-                     size: Union[int, str] = "10MB"
+                     size: Union[int, str] = "20MB"
                      ) -> xr.DataArray:
 
-        raise NotImplementedError()
+        itemsize = self.da.dtype.itemsize
+
+        if not itemsize:
+            self.err("itemsize can't be zero or None")
+
+        if 0 in self.da.sizes.values():
+            self.err("no dimension can be less than 1")
+
+        size = human_size_to_file_size(size) if isinstance(size, str) else size
+
+        if self.da.nbytes <= size:
+            return self.load()
+
+        numel = number2int(size / itemsize)
+        if numel < 1:
+            self.err("size divided by itemsize can't be less than 1")
+
+        preferred_axes = None
+        if preferred_dims:
+            preferred_axes = [self.da.get_axis_num(dim)
+                              for dim in preferred_dims]
+
+        chunks = dict(zip(
+            self.da.dims,
+            shape2chunk(shape=self.da.shape,
+                        numel=numel,
+                        preferred_axes=preferred_axes)))
+
+        return self.load_by_step(**chunks)
 
     @property
     def is_numeric(self) -> bool:
@@ -396,8 +430,7 @@ class BrDA(DaDsMixin):
 
         Examples
         --------
-        >>> ds = xr.tutorial.load_dataset("air_temperature")
-        >>> da = ds["air"]
+        >>> da = xr.tutorial.load_dataset("air_temperature")["air"]
         >>> da.br.chunk(preferred_dims=["time"]).encoding["chunksizes"]
         (2048, 1, 1)
         >>> da.br.chunk(preferred_dims=[["lat", "lon"]]).encoding["chunksizes"]
