@@ -279,7 +279,7 @@ def length_to_slices_of_indexes(length: int, step: int) -> Iterator[slice]:
 def shape2chunk(*,
                 shape: tuple[int, ...],
                 numel: int,
-                preferred_axes: Optional[list[Union[int, list]]] = None
+                pref_axes: Optional[list[Union[int, list]]] = None
                 ) -> tuple[int, ...]:
     """
     Calculate how to best split a np.ndarray in smaller chunks.
@@ -291,8 +291,8 @@ def shape2chunk(*,
     numel : int
         Maximum number of elements in the resulting chunk, e.g.:
         `chunk[0] * chunk[1] * ... chunk[N] <= numel`
-    preferred_axes : list, optional
-        A list of preferred axes for chunking, by default None. Axes are
+    pref_axes : list, optional
+        A list of preferential axes for chunking, by default None. Axes are
         treated in order of preference unless inside a sublist. In this case,
         they are treated with equal preferency, e.g.:
 
@@ -321,19 +321,19 @@ def shape2chunk(*,
     (6, 6, 5, 5)
 
     >>> shape2chunk(shape=(400, 30, 200, 100), numel=1024,
-                    preferred_axes=[0, 1])
+                    pref_axes=[0, 1])
     (400, 2, 1, 1)
 
     >>> shape2chunk(shape=(400, 30, 200, 100), numel=1024,
-                    preferred_axes=[[0, 1]])
+                    pref_axes=[[0, 1]])
     (34, 30, 1, 1)
 
     >>> shape2chunk(shape=(400, 30, 20, 10), numel=1024,
-                    preferred_axes=[[2, 3], 1, 0])
+                    pref_axes=[[2, 3], 1, 0])
     (1, 5, 20, 10)
 
     >>> shape2chunk(shape=(400, 30, 20, 10), numel=1024,
-                    preferred_axes=[[2, 3], [1, 0]])
+                    pref_axes=[[2, 3], [1, 0]])
     (2, 2, 20, 10)
 
     """
@@ -346,11 +346,11 @@ def shape2chunk(*,
     if not numel:
         raise ValueError("Number of elements can't be zero")
 
-    preferred_axes = [] if preferred_axes is None else preferred_axes
+    pref_axes = [] if pref_axes is None else pref_axes
 
     rngs = [range(1, size) for size in shape]
 
-    for axes in preferred_axes:
+    for axes in pref_axes:
 
         axes = axes if isinstance(axes, Iterable) else [axes]
 

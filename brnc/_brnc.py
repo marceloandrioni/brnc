@@ -249,7 +249,7 @@ class BrDA(DaDsMixin):
         return da
 
     def load_by_size(self,
-                     preferred_dims: Optional[list[Union[str, list]]] = None,
+                     pref_dims: Optional[list[Union[str, list]]] = None,
                      size: Union[int, str] = "20MB"
                      ) -> xr.DataArray:
 
@@ -270,16 +270,16 @@ class BrDA(DaDsMixin):
         if numel < 1:
             self.err("size divided by itemsize can't be less than 1")
 
-        preferred_axes = None
-        if preferred_dims:
-            preferred_axes = [self.da.get_axis_num(dim)
-                              for dim in preferred_dims]
+        pref_axes = None
+        if pref_dims:
+            pref_axes = [self.da.get_axis_num(dim)
+                         for dim in pref_dims]
 
         chunks = dict(zip(
             self.da.dims,
             shape2chunk(shape=self.da.shape,
                         numel=numel,
-                        preferred_axes=preferred_axes)))
+                        pref_axes=pref_axes)))
 
         return self.load_by_step(**chunks)
 
@@ -366,7 +366,7 @@ class BrDA(DaDsMixin):
             position=position)
 
     def chunk(self,
-              preferred_dims: Optional[list[Union[str, list]]] = None,
+              pref_dims: Optional[list[Union[str, list]]] = None,
               size: Union[int, str] = 4096
               ) -> xr.DataArray:
         """
@@ -378,8 +378,8 @@ class BrDA(DaDsMixin):
 
         Parameters
         ----------
-        preferred_dims : list, optional
-            A list of preferred dimensions for chunking, by default None.
+        pref_dims : list, optional
+            A list of preferential dimensions for chunking, by default None.
             Dimensions are treated in order of preference unless inside a
             sublist. In this case, they are treated with equal preferency, e.g.:
 
@@ -397,12 +397,12 @@ class BrDA(DaDsMixin):
             map), e.g.: assuming a 4D (time, depth, lat, lon) DataArray
 
             * if the user wants to retrieve time series with greater efficiency,
-            preferred_dims=["time"] should be used
+            pref_dims=["time"] should be used
 
-            * for time-profile-series, preferred_dims=[["time", "depth"]]
+            * for time-profile-series, pref_dims=[["time", "depth"]]
 
             * for horizontal (lat x lon) sections,
-            preferred_dims=[["latitude", "longitude"]]
+            pref_dims=[["latitude", "longitude"]]
 
             This will increase the chunkshape in the chosen dimension (while
             reducing in the others) to reduce the number of necessary disk
@@ -431,9 +431,9 @@ class BrDA(DaDsMixin):
         Examples
         --------
         >>> da = xr.tutorial.load_dataset("air_temperature")["air"]
-        >>> da.br.chunk(preferred_dims=["time"]).encoding["chunksizes"]
+        >>> da.br.chunk(pref_dims=["time"]).encoding["chunksizes"]
         (2048, 1, 1)
-        >>> da.br.chunk(preferred_dims=[["lat", "lon"]]).encoding["chunksizes"]
+        >>> da.br.chunk(pref_dims=[["lat", "lon"]]).encoding["chunksizes"]
         (1, 25, 53)
 
         """
@@ -513,16 +513,16 @@ class BrDA(DaDsMixin):
         if numel < 1:
             self.err("size divided by itemsize can't be less than 1")
 
-        preferred_axes = None
-        if preferred_dims:
-            preferred_axes = [self.da.get_axis_num(dim)
-                              for dim in preferred_dims]
+        pref_axes = None
+        if pref_dims:
+            pref_axes = [self.da.get_axis_num(dim)
+                         for dim in pref_dims]
 
         chunks = dict(zip(
             self.da.dims,
             shape2chunk(shape=self.da.shape,
                         numel=numel,
-                        preferred_axes=preferred_axes)))
+                        pref_axes=pref_axes)))
 
         self.info(
             f"setting chunks '{chunks}' with "
