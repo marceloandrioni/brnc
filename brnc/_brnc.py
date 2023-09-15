@@ -202,7 +202,31 @@ class BrDA(DaDsMixin):
         self.info("loading data in memory: "
                   f"{file_size_to_human_size(self.da.nbytes)}")
 
-        return self.da.load()
+        # load() returns the data and changes the obj itself
+        # compute() returns the data and keeps the obj unchanged
+        #
+        # using compute() to avoid using too much memory in a ds loop, e.g:
+        # assuming 1GB per varible, the first iteration using load() would need
+        # 1GB, the second 2GB and the third 3GB. Using compute(), only 1GB would
+        # be needed.
+        #
+        # print("func", "var", "ds[var]._in_memory", "da2._in_memory")
+        # for func in ["compute", "load"]:
+        #     with xr.tutorial.open_dataset("air_temperature_gradient") as ds:
+        #         for idx, var in enumerate(list(ds.data_vars)):
+        #             da2 = getattr(ds[var], func)()
+        #             # da2.to_netcdf(file, mode="a" if idx else "w")
+        #             print(func, var, ds[var]._in_memory, da2._in_memory)
+        #
+        # func var ds[var]._in_memory da2._in_memory
+        # compute Tair False True
+        # compute dTdx False True
+        # compute dTdy False True
+        # load Tair True True
+        # load dTdx True True
+        # load dTdy True True
+
+        return self.da.compute()
 
     def load_by_step(self, **kwargs: int) -> xr.DataArray:
 
@@ -242,9 +266,6 @@ class BrDA(DaDsMixin):
         # xr.combine_by_coords returns a Dataset if da.name is not None
         if isinstance(da, xr.Dataset):
             da = da[list(da.data_vars)[0]]
-
-        # # sets the DataArray itself
-        # self._obj = da
 
         return da
 
