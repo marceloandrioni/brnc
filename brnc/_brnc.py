@@ -45,6 +45,17 @@ class DaDsMixin:
     def dx(self) -> Union[xr.DataArray, xr.Dataset]:
         return self._obj
 
+    @property
+    def dims(self):
+        """
+        Mapping from dimension names to Axis (AxisFloat, AxisInt or AxisTime).
+        """
+
+        axfac = AxisFactory()
+
+        return {dim: axfac.from_dataarray(self.dx[dim])
+                for dim in self.dx.dims}
+
     def sel_nearest(self,
                     keep_as_dim: bool = False,
                     **kwargs: INT_FLOAT_ANY2DT
@@ -79,9 +90,9 @@ class DaDsMixin:
         def f(x):
             return [x] if keep_as_dim else x
 
-        axsfac = AxisFactory()
+        dims = self.dims
 
-        isel_kwargs = {dim: axsfac.from_dataarray(self.dx[dim]).find_index(value)
+        isel_kwargs = {dim: dims[dim].find_index(value)
                        for dim, value in kwargs.items()}
 
         return self.dx.isel(**isel_kwargs)
@@ -113,9 +124,9 @@ class DaDsMixin:
 
         """
 
-        axsfac = AxisFactory()
+        dims = self.dims
 
-        isel_kwargs = {dim: axsfac.from_dataarray(self.dx[dim]).find_indexes(value)
+        isel_kwargs = {dim: dims[dim].find_indexes(value)
                        for dim, value in kwargs.items()}
 
         return self.dx.isel(**isel_kwargs)
@@ -158,14 +169,12 @@ class DaDsMixin:
 
         """
 
-        axsfac = AxisFactory()
+        dims = self.dims
 
-        isel_kwargs = dict()
-        for dim, slc in kwargs.items():
-            axis = axsfac.from_dataarray(self.dx[dim])
-            isel_kwargs[dim] = axis.find_indexes_between(slc.start,
-                                                         slc.stop,
-                                                         force_inclusive)
+        isel_kwargs = {dim: dims[dim].find_indexes_between(slc.start,
+                                                           slc.stop,
+                                                           force_inclusive)
+                       for dim, slc in kwargs.items()}
 
         return self.dx.isel(**isel_kwargs)
 
@@ -213,9 +222,10 @@ class BrDA(DaDsMixin):
         # print("func", "var", "ds[var]._in_memory", "da2._in_memory")
         # for func in ["compute", "load"]:
         #     with xr.tutorial.open_dataset("air_temperature_gradient") as ds:
-        #         for idx, var in enumerate(list(ds.data_vars)):
+        #         # xr.Dataset().to_netcdf(file)
+        #         for var in list(ds.data_vars):
         #             da2 = getattr(ds[var], func)()
-        #             # da2.to_netcdf(file, mode="a" if idx else "w")
+        #             # da2.to_netcdf(file, mode="a")
         #             print(func, var, ds[var]._in_memory, da2._in_memory)
         #
         # func var ds[var]._in_memory da2._in_memory
