@@ -2,62 +2,118 @@
 # -*- coding: utf-8 -*-
 
 from typing import Union
+from functools import singledispatchmethod
 import numpy as np
 import xarray as xr
 import pyinterp   # type: ignore
 
-from ._types import INT_FLOAT_DT64, ANY2DT
-from ._common import any2datetime
+from ._types import ANY2DT, ANY2TD
+from ._common import number2int, arange_inclusive, any2datetime, any2timedelta
 
 
-class AxisMixin:
+class AxisFloat:
 
-    def _raise_if_outside_range(self, value: INT_FLOAT_DT64) -> None:
-        """Raise an Exception if value is outside the [min, max] range."""
+    def __init__(self, arr: np.ndarray) -> None:
 
-        # Note: pyinterp find_index returns valid (>= 0) index for values
-        # in the range [min_value - step/2, max_value + step/2]
+        # using composition instead of inheritance to hide pyinterp methods
+        self._ax = pyinterp.Axis(arr)
 
-        if self.min_value() <= value <= self.max_value():
-            return
+    def __repr__(self) -> str:
 
-        raise ValueError(f"Requested value {value} is outside the axis range "
-                         f"[{self.min_value()}, {self.max_value()}]")
+        s = (f"{self.__class__.__name__}: {self.values.size} elements from "
+             f"{self.first} to {self.last}")
+
+        if self.regular:
+            s += f" with regular step {self.step}"
+        else:
+            s += " with irregular steps"
+
+        return s
 
     @property
     def values(self) -> np.ndarray:
-        return np.asarray(self)
+        return np.asarray(self._ax)
 
     @property
-    def minmax(self) -> list[INT_FLOAT_DT64]:
-        return [self.min_value(), self.max_value()]
+    def first(self) -> float:
+        return self._ax.front()
 
-    def find_index(self, value: INT_FLOAT_DT64) -> int:
+    @property
+    def last(self) -> float:
+        return self._ax.back()
+
+    @property
+    def firstlast(self) -> tuple[float, float]:
+        return (self.first, self.last)
+
+    @property
+    def min(self) -> float:
+        return self._ax.min_value()
+
+    @property
+    def max(self) -> float:
+        return self._ax.max_value()
+
+    @property
+    def minmax(self) -> tuple[float, float]:
+        return (self.min, self.max)
+
+    @property
+    def regular(self) -> bool:
+        return self._ax.is_regular()
+
+    @property
+    def step(self) -> float:
+        return self._ax.increment()
+
+    @property
+    def ascending(self) -> bool:
+        return self._ax.is_ascending()
+
+    @property
+    def ascending_sign(self) -> int:
+        return 1 if self.ascending else -1
+
+    def _raise_if_outside_range(self, value: float) -> None:
+        """Raise an Exception if value is outside the [min, max] range."""
+
+        # Note: pyinterp find_index returns valid (>= 0) index for values
+        # in the range [min - step/2, max + step/2]
+
+        if self.min <= value <= self.max:
+            return
+
+        raise ValueError(f"Requested value {value} is outside the axis range "
+                         f"[{self.min}, {self.max}]")
+
+    def find_index_nearest(self, value: float) -> int:
+
         self._raise_if_outside_range(value)
-        return super().find_index(np.r_[value]).item()
+        return self._ax.find_index(np.r_[value]).item()
 
-    def find_index_le(self, value: INT_FLOAT_DT64) -> int:
+    def find_index_le(self, value: float) -> int:
 
-        idx = self.find_index(value)
+        idx = self.find_index_nearest(value)
 
         if self.values[idx] <= value:
             return idx
 
-        return idx - 1 if self.is_ascending() else idx + 1
+        return idx - 1 if self.ascending else idx + 1
 
-    def find_index_ge(self, value: INT_FLOAT_DT64) -> int:
+    def find_index_ge(self, value: float) -> int:
 
-        idx = self.find_index(value)
+        idx = self.find_index_nearest(value)
 
         if self.values[idx] >= value:
             return idx
 
-        return idx + 1 if self.is_ascending() else idx - 1
+        return idx + 1 if self.ascending else idx - 1
 
-    def find_value_nearest(self, value: INT_FLOAT_DT64) -> INT_FLOAT_DT64:
-        return self.values[self.find_index(value)]
+    def find_value_nearest(self, value: float) -> float:
 
-    def find_indexes(self, value: INT_FLOAT_DT64) -> list[int]:
+        return self.values[self.find_index_nearest(value)]
+
+    def find_indexes_around(self, value: float) -> list[int]:
 
         self._raise_if_outside_range(value)
 
@@ -65,14 +121,15 @@ class AxisMixin:
             raise ValueError(
                 "Can't get indexes around value for an axis with length 1")
 
-        return list(super().find_indexes(np.r_[value])[0])
+        return list(self._ax.find_indexes(np.r_[value])[0])
 
-    def find_values_around(self, value: INT_FLOAT_DT64) -> list[INT_FLOAT_DT64]:
-        return list(self.values[self.find_indexes(value)])
+    def find_values_around(self, value: float) -> list[float]:
+
+        return list(self.values[self.find_indexes_around(value)])
 
     def find_indexes_between(self,
-                             start: INT_FLOAT_DT64,
-                             stop: INT_FLOAT_DT64,
+                             start: float,
+                             stop: float,
                              force_inclusive: bool = False
                              ) -> list[int]:
 
@@ -89,35 +146,127 @@ class AxisMixin:
         return list(np.where((self.values >= start) & (self.values <= stop))[0])
 
     def find_values_between(self,
-                            start: INT_FLOAT_DT64,
-                            stop: INT_FLOAT_DT64,
+                            start: float,
+                            stop: float,
                             force_inclusive: bool = False
-                            ) -> list[INT_FLOAT_DT64]:
+                            ) -> list[float]:
 
         return list(self.values[self.find_indexes_between(start,
                                                           stop,
                                                           force_inclusive)])
 
+    def resample_down(self, factor: int):
 
-class AxisFloat(AxisMixin, pyinterp.Axis):
-    pass
+        # Note: np.ascontiguousarray
+        # is needed to avoid error
+        # TypeError: points must be a C-style contiguous array
+
+        return self.__class__(
+            np.ascontiguousarray(self.values[0::number2int(factor)]))
+
+    def resample_up(self, factor: int):
+
+        x = self.values
+
+        def f(start, step, factor):
+            return start + (step / factor * np.arange(factor))
+
+        if factor == 1 or x.size == 1:
+            return self
+
+        x2 = np.vectorize(f, signature='(),(),()->(n)')(x[0:-1],
+                                                        np.diff(x),
+                                                        factor)
+
+        return self.__class__(np.concatenate((x2.flatten(), [x[-1]])))
+
+    def resample_by_step(self, step: float):
+
+        return self.__class__(arange_inclusive(self.first,
+                                               self.last,
+                                               abs(step) * self.ascending_sign))
+
+    @singledispatchmethod
+    def resample(self, value):
+        raise TypeError("Invalid type!")
+
+    @resample.register(int)
+    def _(self, factor: int):
+
+        if factor >= 1:
+            return self.resample_up(factor)
+        elif factor <= -1:
+            return self.resample_down(abs(factor))
+        else:
+            raise ValueError("Factor for resample_up/down must be >= 1 or <= -1")
+
+    @resample.register(float)
+    def _(self, step: float):
+        return self.resample_by_step(step)
+
+    @resample.register(np.ndarray)
+    def _(self, arr: np.ndarray):
+        return self.__class__(arr)
 
 
-class AxisInt(AxisMixin, pyinterp.AxisInt64):
-    pass
+class AxisInt(AxisFloat):
+
+    def __init__(self, arr: np.ndarray) -> None:
+        # using composition instead of inheritance to hide pyinterp methods
+        self._ax = pyinterp.AxisInt64(arr)
+
+    def resample_by_step(self, step: float):
+        # np.arange must be called with an int step to return a int array
+        return super().resample_by_step(number2int(step))
 
 
-class AxisTime(AxisMixin, pyinterp.TemporalAxis):
+class AxisTime(AxisFloat):
+
+    def __init__(self, arr: np.ndarray) -> None:
+        # using composition instead of inheritance to hide pyinterp methods
+        self._ax = pyinterp.TemporalAxis(arr)
+
+    @property
+    def step(self) -> np.timedelta64:
+
+        # get time step
+        # Note: xarray uses datetime64[ns] and timedelta64[ns]
+        time_delta = np.timedelta64(super().step)
+
+        # allow only time frequencies with constant time duration, not
+        # M (month, 28 to 31 days) or Y (year, 365 or 366 days), as this can
+        # result in:
+        # UFuncTypeError: Cannot cast ufunc 'add' input 1 from dtype('<m8[M]')
+        # to dtype('<m8[D]') with casting rule 'same_kind'
+        units = ["W", "D", "h", "m", "s", "ms", "us", "ns"]
+
+        if np.datetime_data(time_delta)[0] not in units:
+            raise ValueError(
+                f"Invalid unit for time step '{time_delta}', must be one of: "
+                + ", ".join(units))
+
+        # find the largest possible time unit without precision loss
+        for unit in units:
+            time_delta2 = np.timedelta64(time_delta, unit)
+            if time_delta2 == time_delta:
+                return time_delta2
+        else:
+            # this should never happen
+            raise ValueError("Couldn't convert np.timedelta64 to a 'nice' unit")
 
     @staticmethod
     def _any2dt64(value: ANY2DT) -> np.datetime64:
         return np.datetime64(any2datetime(value))
 
+    @staticmethod
+    def _any2td64(value: ANY2TD) -> np.timedelta64:
+        return np.timedelta64(any2timedelta(value))
+
     def _raise_if_outside_range(self, value: ANY2DT) -> None:
         super()._raise_if_outside_range(self._any2dt64(value))
 
-    def find_index(self, value: ANY2DT) -> int:
-        return super().find_index(self._any2dt64(value))
+    def find_index_nearest(self, value: ANY2DT) -> int:
+        return super().find_index_nearest(self._any2dt64(value))
 
     def find_index_le(self, value: ANY2DT) -> int:
         return super().find_index_le(self._any2dt64(value))
@@ -128,8 +277,8 @@ class AxisTime(AxisMixin, pyinterp.TemporalAxis):
     def find_value_nearest(self, value: ANY2DT) -> np.datetime64:
         return super().find_value_nearest(self._any2dt64(value))
 
-    def find_indexes(self, value: ANY2DT) -> list[int]:
-        return super().find_indexes(self._any2dt64(value))
+    def find_indexes_around(self, value: ANY2DT) -> list[int]:
+        return super().find_indexes_around(self._any2dt64(value))
 
     def find_values_around(self, value: ANY2DT) -> list[np.datetime64]:
         return super().find_values_around(self._any2dt64(value))
@@ -153,6 +302,13 @@ class AxisTime(AxisMixin, pyinterp.TemporalAxis):
         return super().find_values_between(self._any2dt64(start),
                                            self._any2dt64(stop),
                                            force_inclusive=force_inclusive)
+
+    def resample_by_step(self, step: ANY2TD):
+
+        return self.__class__(arange_inclusive(
+            self.first,
+            self.last,
+            abs(self._any2td64(step)) * self.ascending_sign))
 
 
 class AxisFactory:

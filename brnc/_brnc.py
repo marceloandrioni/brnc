@@ -92,7 +92,7 @@ class DaDsMixin:
 
         dims = self.dims
 
-        isel_kwargs = {dim: dims[dim].find_index(value)
+        isel_kwargs = {dim: dims[dim].find_index_nearest(value)
                        for dim, value in kwargs.items()}
 
         return self.dx.isel(**isel_kwargs)
@@ -126,7 +126,7 @@ class DaDsMixin:
 
         dims = self.dims
 
-        isel_kwargs = {dim: dims[dim].find_indexes(value)
+        isel_kwargs = {dim: dims[dim].find_indexes_around(value)
                        for dim, value in kwargs.items()}
 
         return self.dx.isel(**isel_kwargs)
@@ -249,7 +249,7 @@ class BrDA(DaDsMixin):
 
         # load the whole DataArray if no kwargs
         if len(kwargs) == 0:
-            return self.da.load()
+            return self.load()
 
         # load the DataArray one slice at a time
         slices = [length_to_slices_of_indexes(self.da[dim].size, step)
@@ -267,7 +267,7 @@ class BrDA(DaDsMixin):
                              for dim, s in d.items()])
 
             pbar.set_description(f"{msg}")
-            das.append(self.da.isel(**d).load())
+            das.append(self.da.isel(**d).compute())
 
             # time.sleep(0.1)
 
@@ -356,7 +356,7 @@ class BrDA(DaDsMixin):
         # "NotImplementedError: Don't yet support nd fancy indexing"
         # so call load to make sure da is a np.array with data in memory.
 
-        return self.da.br.load().reduce(
+        return self.load().reduce(
             index_of_valid_value_along_axis,
             dim=dim,
             keep_attrs=True,
@@ -390,7 +390,7 @@ class BrDA(DaDsMixin):
         # "NotImplementedError: Don't yet support nd fancy indexing"
         # so call load to make sure da is a np.array with data in memory.
 
-        return self.da.br.load().reduce(
+        return self.load().reduce(
             valid_value_along_axis,
             dim=dim,
             keep_attrs=True,

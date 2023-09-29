@@ -3,6 +3,7 @@
 
 from collections.abc import Iterable
 from typing import Union, Iterator, Optional
+from numbers import Number
 from functools import singledispatch
 from itertools import accumulate
 import re
@@ -12,7 +13,7 @@ import pandas as pd
 import itertools
 
 
-def number2int(x: Union[int, float]) -> int:
+def number2int(x: Number) -> int:
     """
     Convert number to an integer without precision loss.
 
@@ -39,6 +40,57 @@ def number2int(x: Union[int, float]) -> int:
     if x - int(x):
         raise ValueError("Number {x} can't be cast to int without precision loss")
     return int(x)
+
+
+def arange_inclusive(start: float,
+                     stop: Optional[float] = None,
+                     step: float = 1.0
+                     ) -> np.ndarray:
+    """
+    Generate an inclusive/closed [start, stop] range of values, only if
+    `(stop - start) % step == 0`. Else, a non-inclusive/half-closed
+    [start, stop) range of values is created.
+
+    Parameters
+    ----------
+    start : float
+        The starting value of the range.
+    stop : float
+        The end value of the range.
+        Inclusive only if `(stop - start) % step == 0`
+    step : float
+        The step size between values in the range.
+
+    Returns
+    -------
+    arr : np.ndarray
+        An array of values within the specified range.
+
+    Examples
+    --------
+    >>> arange_inclusive(10)
+    array([ 0.,  1.,  2.,  3.,  4.,  5.,  6.,  7.,  8.,  9., 10.])
+
+    >>> arange_inclusive(1, 10)
+    array([ 1.,  2.,  3.,  4.,  5.,  6.,  7.,  8.,  9., 10.])
+
+    >>> arange_inclusive(1, 10, 2)   # non-inclusive in this case
+    array([1, 3, 5, 7, 9])
+
+    """
+
+    start, stop = (0.0, start) if stop is None else (start, stop)
+
+    # np.arange has inconsistent behaviour due to rounding errors, e.g.:
+    #
+    # np.arange(7.8, 8.35, 0.05) -> this does not include stop
+    # array([7.8 , 7.85, ..., 8.15, 8.2 , 8.25, 8.3 ])
+    #
+    # np.arange(7.8, 8.4, 0.05) -> this includes stop
+    # array([7.8 , 7.85, ..., 8.15, 8.2 , 8.25, 8.3 , 8.35, 8.4 ])
+
+    arr = np.arange(start, stop + step, step)
+    return arr[np.where((arr >= start) & (arr <= stop))[0]]
 
 
 def file_size_to_human_size(size: int) -> str:
@@ -436,10 +488,10 @@ def _ranges2product(rngs: list[range],
 
 
 @singledispatch
-def any2datetime(dt: Union[datetime.datetime,
-                           datetime.date,
-                           np.datetime64,
-                           str],
+def any2datetime(dt: [datetime.datetime,
+                      datetime.date,
+                      np.datetime64,
+                      str],
                  dt_fmt: Optional[str] = None
                  ) -> datetime.datetime:
     """
@@ -487,6 +539,7 @@ def any2datetime(dt: Union[datetime.datetime,
     datetime.datetime(1983, 12, 19, 0, 0)
 
     """
+
     raise TypeError("Invalid type!")
 
 
@@ -542,3 +595,69 @@ def _(dt: str, dt_fmt: Optional[str] = None) -> datetime.datetime:
 
     raise ValueError(f"time data '{dt}' does not match any of these formats: "
                      + ", ".join(dt_fmts))
+
+
+@singledispatch
+def any2timedelta(td: Union[datetime.timedelta,
+                            np.timedelta64,
+                            str,
+                            Number]
+                  ) -> datetime.timedelta:
+    """
+    Convert `td` to datetime.timedelta object.
+
+    Parameters
+    ----------
+    td : datetime.timedelta, np.timedelta64, str
+
+        * datetime.timedelta: just returns
+        * np.timedelta64: convert to datetime.timedelta
+        * str: tries to parse the string assuming a standard format.
+        * Number: assumes hours as time unit.
+
+    Returns
+    -------
+    td : datetime.timedelta
+
+    Examples
+    --------
+    >>> any2timedelta(datetime.timedelta(days=1, hours=12))
+    datetime.timedelta(days=1, seconds=43200)
+
+    >>> any2timedelta(datetime.timedelta(days=-1, hours=-12))
+    datetime.timedelta(days=-2, seconds=43200)
+
+    >>> any2timedelta(np.timedelta64(36, "h"))
+    datetime.timedelta(days=1, seconds=43200)
+
+    >>> any2timedelta("1d12h")
+    datetime.timedelta(days=1, seconds=43200)
+
+    >>> any2timedelta("P1DT12H")   # ISO 8601 format
+    datetime.timedelta(days=1, seconds=43200)
+
+    >>> any2timedelta("-P1DT12H")   # ISO 8601 format
+    datetime.timedelta(days=-2, seconds=43200)
+
+    >>> any2timedelta(36)   # assumes is in hours
+    datetime.timedelta(days=1, seconds=43200)
+
+    """
+
+    raise TypeError("Invalid type!")
+
+
+@any2timedelta.register(datetime.timedelta)
+def _(td: datetime.timedelta) -> datetime.timedelta:
+    return td
+
+
+@any2timedelta.register(np.timedelta64)
+@any2timedelta.register(str)
+def _(td: Union[np.datetime64, str]) -> datetime.timedelta:
+    return pd.Timedelta(td).to_pytimedelta()
+
+
+@any2timedelta.register(Number)
+def _(td: Number) -> datetime.timedelta:
+    return datetime.timedelta(hours=td)
