@@ -488,10 +488,10 @@ def _ranges2product(rngs: list[range],
 
 
 @singledispatch
-def any2datetime(dt: [datetime.datetime,
-                      datetime.date,
-                      np.datetime64,
-                      str],
+def any2datetime(dt: Union[datetime.datetime,
+                           datetime.date,
+                           np.datetime64,
+                           str],
                  dt_fmt: Optional[str] = None
                  ) -> datetime.datetime:
     """
