@@ -58,20 +58,19 @@ class DaDsMixin:
 
     def sel_nearest(self,
                     keep_as_dim: bool = False,
-                    **kwargs: INT_FLOAT_ANY2DT
+                    **dims_kws: INT_FLOAT_ANY2DT,
                     ) -> Union[xr.DataArray, xr.Dataset]:
         """
         Select the nearest data point to the specified value along the dimension.
 
         Parameters
         ----------
+        **dims_kws : int, float, datetime.datetime, datetime.date, np.datetime64,
+                     str
+            Dimension and corresponding value.
         keep_as_dim : bool, optional
             Flag indicating whether to keep the dimension for the selected
             value as a separate dimension.
-        **kwargs : int, float, datetime.datetime, datetime.date, np.datetime64,
-                   str
-            Keyword arguments representing the dimension and corresponding
-            value.
 
         Returns
         -------
@@ -93,12 +92,12 @@ class DaDsMixin:
         dims = self.dims
 
         isel_kwargs = {dim: dims[dim].find_index_nearest(value)
-                       for dim, value in kwargs.items()}
+                       for dim, value in dims_kws.items()}
 
         return self.dx.isel(**isel_kwargs)
 
     def sel_around(self,
-                   **kwargs: INT_FLOAT_ANY2DT
+                   **dims_kws: INT_FLOAT_ANY2DT
                    ) -> Union[xr.DataArray, xr.Dataset]:
         """
         Select the two data points around the specified value along the
@@ -106,10 +105,9 @@ class DaDsMixin:
 
         Parameters
         ----------
-        **kwargs : int, float, datetime.datetime, datetime.date, np.datetime64,
-                   str
-            Keyword arguments representing the dimension and corresponding
-            values.
+        **dims_kws : int, float, datetime.datetime, datetime.date, np.datetime64,
+                     str
+            Dimension and corresponding value.
 
         Returns
         -------
@@ -127,25 +125,24 @@ class DaDsMixin:
         dims = self.dims
 
         isel_kwargs = {dim: dims[dim].find_indexes_around(value)
-                       for dim, value in kwargs.items()}
+                       for dim, value in dims_kws.items()}
 
         return self.dx.isel(**isel_kwargs)
 
     def sel_slice(self,
                   force_inclusive: bool = False,
-                  **kwargs: slice
+                  **dims_kws: slice,
                   ) -> Union[xr.DataArray, xr.Dataset]:
         """
         Select a slice along the specified dimension.
 
         Parameters
         ----------
+        **dims_kws : slice
+            Dimension and corresponding slice.
         force_inclusive : bool, optional
             Flag indicating whether the slice should be expanded to forcefully
             include the values at the start and end of the slice.
-        **kwargs : slice
-            Keyword arguments representing the dimension and corresponding
-            slice.
 
         Returns
         -------
@@ -174,7 +171,7 @@ class DaDsMixin:
         isel_kwargs = {dim: dims[dim].find_indexes_between(slc.start,
                                                            slc.stop,
                                                            force_inclusive)
-                       for dim, slc in kwargs.items()}
+                       for dim, slc in dims_kws.items()}
 
         return self.dx.isel(**isel_kwargs)
 
@@ -202,7 +199,7 @@ class BrDA(DaDsMixin):
         """Warning message msg."""
         log.warning(f"DataArray '{self.name}': {msg}")
 
-    def load(self, **kwargs: int) -> xr.DataArray:
+    def load(self) -> xr.DataArray:
 
         # just return it if it was already loaded
         if self.da._in_memory:
@@ -238,7 +235,7 @@ class BrDA(DaDsMixin):
 
         return self.da.compute()
 
-    def load_by_step(self, **kwargs: int) -> xr.DataArray:
+    def load_by_step(self, **dims_kws: int) -> xr.DataArray:
 
         # just return it if it was already loaded
         if self.da._in_memory:
@@ -247,13 +244,13 @@ class BrDA(DaDsMixin):
         self.info("loading data in memory: "
                   f"{file_size_to_human_size(self.da.nbytes)}")
 
-        # load the whole DataArray if no kwargs
-        if len(kwargs) == 0:
+        # load the whole DataArray if no dims_kws
+        if len(dims_kws) == 0:
             return self.load()
 
         # load the DataArray one slice at a time
         slices = [length_to_slices_of_indexes(self.da[dim].size, step)
-                  for dim, step in kwargs.items()]
+                  for dim, step in dims_kws.items()]
 
         slices_prod = list(itertools.product(*slices))
 
@@ -261,7 +258,7 @@ class BrDA(DaDsMixin):
         pbar = tqdm(slices_prod)
         for values in pbar:
 
-            d = dict(zip(kwargs.keys(), values))
+            d = dict(zip(dims_kws.keys(), values))
 
             msg = ", ".join([f"{dim}: [{s.start}, {s.stop})"
                              for dim, s in d.items()])
