@@ -475,6 +475,9 @@ def _ranges2product(rngs: list[range],
     idx = np.nanargmin(np.where(delta > 0, np.nan, np.abs(delta)))
 
     # do +1 to one or more columns to get even closer to prod
+    #
+    # Note: do +1 to left most axis first, as Numpy uses row-major memory layout
+    # https://agilescientific.com/blog/2018/12/28/what-is-the-fastest-axis-of-an-array
     zerone = np.array(list(itertools.product([True, False],
                                              repeat=len(stops)))).astype("int")
 
