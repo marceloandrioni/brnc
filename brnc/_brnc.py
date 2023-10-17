@@ -260,8 +260,9 @@ class BrDA(DaDsMixin):
 
             d = dict(zip(dims_kws.keys(), values))
 
-            msg = ", ".join([f"{dim}: [{s.start}, {s.stop})"
-                             for dim, s in d.items()])
+            msg = ", ".join(
+                [f"{dim}: {s.start + 1}:{s.stop}/{self.da[dim].size}"
+                 for dim, s in d.items()])
 
             pbar.set_description(f"{msg}")
             das.append(self.da.isel(**d).compute())
