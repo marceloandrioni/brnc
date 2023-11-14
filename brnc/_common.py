@@ -120,11 +120,14 @@ def file_size_to_human_size(size: int) -> str:
     # Reference: https://stackoverflow.com/a/1094933/9707202
     # Author: https://stackoverflow.com/users/55246/sridhar-ratnakumar
 
-    _ = number2int(size)
+    _ = int(str(size))
 
-    for unit in ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB"):
+    units = {"B": "d"} | {unit: "3.1f"
+                          for unit in ("KB", "MB", "GB", "TB", "PB", "EB", "ZB")}
+
+    for unit, fmt in units.items():
         if abs(size) < 1024:
-            return f"{size:3.1f}{unit}"
+            return f"{size:{fmt}}{unit}"
         size /= 1024
 
     raise ValueError("Could not find a valid unit.")

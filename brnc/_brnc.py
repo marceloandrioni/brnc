@@ -76,7 +76,7 @@ class DaDsMixin:
         -------
         dx : xr.DataArray or xr.Dataset
             DataArray/Dataset with the nearest data point. Selected dimensions
-            will be returned with size 1 if keep_as_dim`is True, else, the
+            will be returned with size 1 if `keep_as_dim` is True, else, the
             dimension will be dropped.
 
         Examples
@@ -185,7 +185,11 @@ class BrDA(DaDsMixin):
 
     @property
     def name(self) -> str:
-        return getattr(self.da, "name", "unnamed")
+
+        names = [self.da.name,
+                 "unnamed"]
+
+        return next(filter(None, names))
 
     def err(self, msg: str) -> None:
         """Raise a ValueError with message msg."""
@@ -394,6 +398,122 @@ class BrDA(DaDsMixin):
             keep_attrs=True,
             position=position)
 
+    def constant_validity_along_dimension(self,
+                                          dim: str
+                                          ) -> xr.DataArray:
+
+        raise NotImplementedError
+
+        # True if the value behaviour is persistent along dimension, e.g.:
+        # if all values along dim are nan/inf -> True
+        # if all values along dim are valid -> True
+        # if there is nan/inf and valid values along dim -> False
+        #
+        # Useful to check if there is no missing data along time dimension in
+        # a 3D (time,lat,lon) or 4D (time, depth, lat, lon) variable
+
+        # def f(arr):
+        #     # np.isfinite checks for nan and inf
+        #     return np.all(np.isfinite(arr)) or np.all(~np.isfinite(arr))
+        #     return np.all(np.isnan(arr)) or np.all(~np.isnan(arr))
+        # should I use np.isnan or np.isfinite? nan is to be expected, but inf is not
+
+        # arr = np.random.rand(20, 10, 5)
+        # arr[1,1,1] = np.nan
+
+        # def func1(arr, axis):
+
+        #     def f(arr):
+
+        #         # np.isfinite checks for nan and inf
+        #         out = np.isfinite(arr)
+        #         return np.all(out) or np.all(~out)
+
+        #     return np.apply_along_axis(f,
+        #                                axis,
+        #                                arr)
+
+        # def func2(arr, axis):
+        #     # return true if values along axis are all valid or all invalid
+        #     # return false if there is valid and invalid valus along axis
+        # #     aux = np.isnan(arr).sum(axis=axis)
+        #     aux = np.isfinite(arr).sum(axis=axis)
+        #     return (aux == 0) | (aux == arr.shape[axis])
+
+        # def func(da):
+        #     return da.reduce(func1,
+        #                      dim="time")
+        #
+        # func2 if much (300x) faster than func1
+
+
+    # mark only the border points
+
+    # infile = "/tmp/cmems_global-analysis-forecast-phy-001-024.nc"
+
+    # ds = xr.open_dataset(infile)
+
+    # ds["mask"] = (("latitude", "longitude"),
+    #               np.where(np.isnan(ds["uo"].isel(time=0, depth=0).values), 0, 1))
+
+    # mask = ds["mask"].values
+
+    # mlon, mlat = np.meshgrid(ds["longitude"], ds["latitude"])
+
+
+    # def in_border(mask: np.ndarray) -> np.ndarray:
+
+    #     border = np.full(mask.shape, False, dtype=bool)
+    #     for index, value in np.ndenumerate(mask):
+
+    #         if not value:
+    #             continue
+
+    #         # True if point is in grid border
+    #         for axis in range(mask.ndim):
+
+    #             if border[index]:
+    #                 continue
+
+    #             if index[axis] == 0 or index[axis] == mask.shape[axis] - 1:
+    #                 border[index] = True
+
+    #         # True if any of the surrounding points is False
+    #         slices = tuple([slice(index[axis] - 1, index[axis] + 2)
+    #                         for axis in range(mask.ndim)])
+
+    #         if mask[slices].sum() != mask[slices].size:
+    #             border[index] = True
+    #             continue
+
+    #     return border
+
+    # border = in_border(mask)
+
+    # df = pd.DataFrame(data=np.column_stack((mlon.flatten(),
+    #                                         mlat.flatten(),
+    #                                         border.flatten())),
+    #                   columns=["longitude", "latitude", "border"])
+    # df["border"] = df["border"].astype(bool)
+    # df = df[df["border"]][["longitude", "latitude"]]
+
+
+    # df = ds["mask"].to_dataframe().reset_index()
+    # df = df[df["mask"].astype(bool)][["longitude", "latitude"]]
+
+    # fig, ax = plt.subplots()
+    # ax.pcolormesh(mlon, mlat, mask, edgecolors='k', alpha=0.3)
+    # ax.plot(df["longitude"], df["latitude"], ".r")
+
+    # convex = shapely.MultiPoint(df.values).convex_hull
+    # # ax.plot(*convex.boundary.xy)
+
+    # concave = shapely.concave_hull(shapely.MultiPoint(df.values),
+    #                                ratio=0.001,
+    #                                allow_holes=False)
+    # ax.plot(*concave.boundary.xy, 'g-')
+    # ax.axis('equal')
+
     def chunk(self,
               pref_dims: Optional[list[Union[str, list]]] = None,
               size: Union[int, str] = 4096
@@ -578,14 +698,22 @@ class BrDS(DaDsMixin):
     def ds(self) -> xr.DataArray:
         return self._obj
 
+    @property
+    def name(self) -> str:
+
+        names = [self.ds.encoding.get("source"),
+                 "unnamed"]
+
+        return next(filter(None, names))
+
     def err(self, msg: str) -> None:
         """Raise a ValueError with message msg."""
-        raise ValueError(f"Dataset: {msg}")
+        raise ValueError(f"Dataset '{self.name}': {msg}")
 
     def info(self, msg: str) -> None:
         """Info message msg."""
-        log.info(f"Dataset: {msg}")
+        log.info(f"Dataset '{self.name}': {msg}")
 
     def warn(self, msg: str) -> None:
         """Warning message msg."""
-        log.warning(f"Dataset: {msg}")
+        log.warning(f"Dataset '{self.name}': {msg}")
