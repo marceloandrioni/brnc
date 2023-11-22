@@ -14,7 +14,7 @@ import xarray as xr
 from ._axis import AxisFactory
 from ._common import (index_of_valid_value_along_axis, valid_value_along_axis,
                       number2int, shape2chunk, length_to_slices_of_indexes,
-                      dict_prod, file_size_to_human_size, human_size_to_file_size)
+                      dict_prod, humanize_file_size, dehumanize_file_size)
 from ._types import INT_FLOAT_ANY2DT
 
 import logging
@@ -209,7 +209,7 @@ class BrDA(DaDsMixin):
             return self.da
 
         self.info("loading data in memory: "
-                  f"{file_size_to_human_size(self.da.nbytes)}")
+                  f"{humanize_file_size(self.da.nbytes)}")
 
         # load() returns the data and changes the obj itself
         # compute() returns the data and keeps the obj unchanged
@@ -249,12 +249,12 @@ class BrDA(DaDsMixin):
         if self.da._in_memory:
             return self.da
 
-        self.info("loading data in memory: "
-                  f"{file_size_to_human_size(self.da.nbytes)}")
-
         # load the whole DataArray if no dims_kws
         if len(dims_kws) == 0:
             return self.load()
+
+        self.info("loading data in memory: "
+                  f"{humanize_file_size(self.da.nbytes)}")
 
         # split the DataArray in chunks, load each chunk individually and merge
         slices = dict_prod(self._dims_steps_to_dims_slices(dims_kws))
@@ -265,7 +265,7 @@ class BrDA(DaDsMixin):
         das = []
         for idx, d in enumerate(pbar, start=1):
 
-            # show the indexes of what is being loaded (use 1 based index)
+            # show the indexes of what is being loaded (use 1 based indexes)
             msg = ", ".join(
                 [f"{dim}: {slc.start + 1}:{slc.stop}/{self.da[dim].size}"
                  for dim, slc in d.items()])
@@ -275,6 +275,9 @@ class BrDA(DaDsMixin):
             das.append(self.da.isel(**d).compute())
 
             # time.sleep(1)
+
+            if idx == len(pbar):
+                pbar.set_description(f"{idx}/{len(pbar)}: finished")
 
         pbar.close()
 
@@ -299,7 +302,7 @@ class BrDA(DaDsMixin):
         if 0 in self.da.sizes.values():
             self.err("no dimension can be less than 1")
 
-        size = human_size_to_file_size(size) if isinstance(size, str) else size
+        size = dehumanize_file_size(size) if isinstance(size, str) else size
 
         if self.da.nbytes <= size:
             return self.load()
@@ -661,7 +664,7 @@ class BrDA(DaDsMixin):
         if 0 in self.da.sizes.values():
             self.err("no dimension can be less than 1")
 
-        size = human_size_to_file_size(size) if isinstance(size, str) else size
+        size = dehumanize_file_size(size) if isinstance(size, str) else size
 
         numel = number2int(size / itemsize)
         if numel < 1:

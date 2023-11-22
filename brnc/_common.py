@@ -93,7 +93,7 @@ def arange_inclusive(start: float,
     return arr[np.where((arr >= start) & (arr <= stop))[0]]
 
 
-def file_size_to_human_size(size: int) -> str:
+def humanize_file_size(size: int) -> str:
     """
     Convert a file size in bytes to human-readable format.
 
@@ -109,10 +109,10 @@ def file_size_to_human_size(size: int) -> str:
 
     Examples
     --------
-    >>> file_size_to_human_size(10240)
+    >>> humanize_file_size(10240)
     '10.0KB'
 
-    >>> file_size_to_human_size(2684354560)
+    >>> humanize_file_size(2684354560)
     '2.5GB'
 
     """
@@ -133,7 +133,7 @@ def file_size_to_human_size(size: int) -> str:
     raise ValueError("Could not find a valid unit.")
 
 
-def human_size_to_file_size(size: str) -> int:
+def dehumanize_file_size(size: str) -> int:
     """
     Convert a file size in human-readable format to bytes.
 
@@ -149,10 +149,10 @@ def human_size_to_file_size(size: str) -> int:
 
     Examples
     --------
-    >>> human_size_to_file_size("10KB")
+    >>> dehumanize_file_size("10KB")
     10240
 
-    >>> human_size_to_file_size("2.5GB")
+    >>> dehumanize_file_size("2.5GB")
     2684354560
 
     """
