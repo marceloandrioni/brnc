@@ -270,14 +270,19 @@ class BrDA(DaDsMixin):
                 [f"{dim}: {slc.start + 1}:{slc.stop}/{self.da[dim].size}"
                  for dim, slc in d.items()])
 
-            pbar.set_description(f"{idx}/{len(pbar)}: {msg}")
+            # use floor so that 100% is only reached at the actual end. tqdm
+            # uses {percentage:3.0f}, which may result in 100% at the last few
+            # iterations, e.g.: f"{99.5:3.0f}" -> 100
+            perc = np.floor((idx - 1) / len(pbar) * 100)
+
+            pbar.set_description(f"{idx}/{len(pbar)}: {msg}: {perc:.0f}%")
 
             das.append(self.da.isel(**d).compute())
 
-            # time.sleep(1)
+            # time.sleep(0.1)
 
             if idx == len(pbar):
-                pbar.set_description(f"{idx}/{len(pbar)}: finished")
+                pbar.set_description(f"{idx}/{len(pbar)}: 100%")
 
         pbar.close()
 
