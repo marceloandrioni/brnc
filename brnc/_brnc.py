@@ -5,7 +5,6 @@ __all__ = ["HOW_TO_USE_IT"]
 
 
 from typing import Optional, Union
-import itertools
 import time
 from tqdm import tqdm
 import numpy as np
@@ -15,7 +14,7 @@ import xarray as xr
 from ._axis import AxisFactory
 from ._common import (index_of_valid_value_along_axis, valid_value_along_axis,
                       number2int, shape2chunk, length_to_slices_of_indexes,
-                      file_size_to_human_size, human_size_to_file_size)
+                      dict_prod, file_size_to_human_size, human_size_to_file_size)
 from ._types import INT_FLOAT_ANY2DT
 
 import logging
@@ -239,6 +238,11 @@ class BrDA(DaDsMixin):
 
         return self.da.compute()
 
+    def _dims_steps_to_dims_slices(self, dims_steps):
+
+        return {dim: length_to_slices_of_indexes(self.da[dim].size, step)
+                for dim, step in dims_steps.items()}
+
     def load_by_step(self, **dims_kws: int) -> xr.DataArray:
 
         # just return it if it was already loaded
@@ -252,26 +256,27 @@ class BrDA(DaDsMixin):
         if len(dims_kws) == 0:
             return self.load()
 
-        # load the DataArray one slice at a time
-        slices = [length_to_slices_of_indexes(self.da[dim].size, step)
-                  for dim, step in dims_kws.items()]
+        # split the DataArray in chunks, load each chunk individually and merge
+        slices = dict_prod(self._dims_steps_to_dims_slices(dims_kws))
 
-        slices_prod = list(itertools.product(*slices))
+        pbar = tqdm(slices,
+                    bar_format="{desc}|{bar}| [{elapsed}]")
 
         das = []
-        pbar = tqdm(slices_prod)
-        for values in pbar:
+        for idx, d in enumerate(pbar, start=1):
 
-            d = dict(zip(dims_kws.keys(), values))
-
+            # show the indexes of what is being loaded (use 1 based index)
             msg = ", ".join(
-                [f"{dim}: {s.start + 1}:{s.stop}/{self.da[dim].size}"
-                 for dim, s in d.items()])
+                [f"{dim}: {slc.start + 1}:{slc.stop}/{self.da[dim].size}"
+                 for dim, slc in d.items()])
 
-            pbar.set_description(f"{msg}")
+            pbar.set_description(f"{idx}/{len(pbar)}: {msg}")
+
             das.append(self.da.isel(**d).compute())
 
-            # time.sleep(0.1)
+            # time.sleep(1)
+
+        pbar.close()
 
         da = xr.combine_by_coords(das, combine_attrs="identical")
 

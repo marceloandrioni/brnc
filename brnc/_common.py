@@ -331,6 +331,34 @@ def length_to_slices_of_indexes(length: int, step: int) -> Iterator[slice]:
         yield slice(arr[0], arr[-1] + 1)
 
 
+def dict_prod(d: dict) -> list:
+    """
+    Generate a list of dictionaries by taking the product of values from the
+    input dictionary.
+
+    Parameters:
+    -----------
+    d : dict
+        The input dictionary containing key-value pairs.
+
+    Returns:
+    --------
+    list
+        A list of dictionaries where each dictionary is formed by taking the
+        product of values from the input dictionary.
+
+    Example:
+    --------
+    >>> d = {'a': [1, 2], 'b': [3, 4]}
+    >>> dict_prod(d)
+    [{'a': 1, 'b': 3}, {'a': 1, 'b': 4}, {'a': 2, 'b': 3}, {'a': 2, 'b': 4}]
+
+    """
+
+    return [dict(zip(d.keys(), values))
+            for values in itertools.product(*d.values())]
+
+
 def shape2chunk(*,
                 shape: tuple[int, ...],
                 numel: int,
