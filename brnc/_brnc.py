@@ -243,6 +243,19 @@ class BrDA(DaDsMixin):
         return {dim: length_to_slices_of_indexes(self.da[dim].size, step)
                 for dim, step in dims_steps.items()}
 
+    def _tqdm_description(self, pbar, d):
+
+        slices_repr = ", ".join([f"{dim}:[{slc.start}:{slc.stop})/{self.da[dim].size}"
+                                 for dim, slc in d.items()])
+
+        # tqdm uses {percentage:3.0f}% to represent percentage. This may
+        # incorrectly display 100% in the last few iterations, e.g.:
+        # f"{99.5:3.0f}" -> 100
+        # https://github.com/tqdm/tqdm/issues/1398
+        perc = np.floor(100 * pbar.n / pbar.total)
+
+        return f"{slices_repr}; {perc:.0f}%"
+
     def load_by_step(self, **dims_kws: int) -> xr.DataArray:
 
         # just return it if it was already loaded
@@ -259,34 +272,21 @@ class BrDA(DaDsMixin):
         # split the DataArray in chunks, load each chunk individually and merge
         slices = dict_prod(self._dims_steps_to_dims_slices(dims_kws))
 
-        pbar = tqdm(slices,
-                    bar_format="{desc}|{bar}| [{elapsed}]")
+        with tqdm(
+            slices,
+            total=len(slices),
+            bar_format="{n_fmt}/{total_fmt}; {desc}|{bar}| [{elapsed}]") as pbar:
 
-        das = []
-        for idx, d in enumerate(pbar, start=1):
+            das = []
+            for d in slices:
+                pbar.set_description(self._tqdm_description(pbar, d))
+                das.append(self.da.isel(**d).compute())
+                # time.sleep(3)
+                pbar.update(1)
 
-            # show the indexes of what is being loaded (use 1 based indexes)
-            msg = ", ".join(
-                [f"{dim}: {slc.start + 1}:{slc.stop}/{self.da[dim].size}"
-                 for dim, slc in d.items()])
+            pbar.set_description(self._tqdm_description(pbar, d))
 
-            # use floor so that 100% is only reached at the actual end. tqdm
-            # uses {percentage:3.0f}, which may result in 100% at the last few
-            # iterations, e.g.: f"{99.5:3.0f}" -> 100
-            perc = np.floor((idx - 1) / len(pbar) * 100)
-
-            pbar.set_description(f"{idx}/{len(pbar)}: {msg}: {perc:.0f}%")
-
-            das.append(self.da.isel(**d).compute())
-
-            # time.sleep(0.1)
-
-            if idx == len(pbar):
-                pbar.set_description(f"{idx}/{len(pbar)}: 100%")
-
-        pbar.close()
-
-        da = xr.combine_by_coords(das, combine_attrs="identical")
+            da = xr.combine_by_coords(das, combine_attrs="identical")
 
         # xr.combine_by_coords returns a Dataset if da.name is not None
         if isinstance(da, xr.Dataset):
