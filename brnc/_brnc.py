@@ -238,15 +238,16 @@ class BrDA(DaDsMixin):
 
         return self.da.compute()
 
-    def _dims_steps_to_dims_slices(self, dims_steps):
+    def _dims_steps_to_dims_slices(self, dims_steps: dict) -> dict:
 
         return {dim: length_to_slices_of_indexes(self.da[dim].size, step)
                 for dim, step in dims_steps.items()}
 
-    def _tqdm_description(self, pbar, d):
+    def _tqdm_description(self, pbar, d: dict) -> str:
 
-        slices_repr = ", ".join([f"{dim}:[{slc.start}:{slc.stop})/{self.da[dim].size}"
-                                 for dim, slc in d.items()])
+        slices_repr = ", ".join(
+            [f"{dim}:[{slc.start}:{slc.stop})/{self.da[dim].size}"
+             for dim, slc in d.items()])
 
         # tqdm uses {percentage:3.0f}% to represent percentage. This may
         # incorrectly display 100% in the last few iterations, e.g.:
@@ -254,7 +255,7 @@ class BrDA(DaDsMixin):
         # https://github.com/tqdm/tqdm/issues/1398
         perc = np.floor(100 * pbar.n / pbar.total)
 
-        return f"{slices_repr}; {perc:.0f}%"
+        return f"{slices_repr}: {perc:.0f}%"
 
     def load_by_step(self, **dims_kws: int) -> xr.DataArray:
 
@@ -272,16 +273,17 @@ class BrDA(DaDsMixin):
         # split the DataArray in chunks, load each chunk individually and merge
         slices = dict_prod(self._dims_steps_to_dims_slices(dims_kws))
 
-        with tqdm(
-            slices,
-            total=len(slices),
-            bar_format="{n_fmt}/{total_fmt}; {desc}|{bar}| [{elapsed}]") as pbar:
+        bar_format = "{desc}|{bar}| {n_fmt}/{total_fmt} [{elapsed}]"
+
+        with tqdm(slices,
+                  total=len(slices),
+                  bar_format=bar_format) as pbar:
 
             das = []
             for d in slices:
                 pbar.set_description(self._tqdm_description(pbar, d))
                 das.append(self.da.isel(**d).compute())
-                # time.sleep(3)
+                # time.sleep(1)
                 pbar.update(1)
 
             pbar.set_description(self._tqdm_description(pbar, d))
