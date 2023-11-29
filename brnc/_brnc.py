@@ -33,9 +33,7 @@ HOW_TO_USE_IT = ("Importing this module automatically adds a 'br' accessor to "
 
 
 class DaDsMixin:
-    """
-    Methods common to DataArrays and Datasets.
-    """
+    """Methods common to DataArrays and Datasets."""
 
     def __init__(self, xarray_obj) -> None:
         self._obj = xarray_obj
@@ -44,11 +42,25 @@ class DaDsMixin:
     def dx(self) -> Union[xr.DataArray, xr.Dataset]:
         return self._obj
 
+    def _type_name(self) -> str:
+        """Type name of self.dx: DataArray or Dataset."""
+        return type(self.dx).__name__
+
+    def err(self, msg: str) -> None:
+        """Raise a ValueError with message msg."""
+        raise ValueError(f"{self._type_name()} '{self.name}': {msg}")
+
+    def info(self, msg: str) -> None:
+        """Info message msg."""
+        log.info(f"{self._type_name()} '{self.name}': {msg}")
+
+    def warn(self, msg: str) -> None:
+        """Warning message msg."""
+        log.warning(f"{self._type_name()} '{self.name}': {msg}")
+
     @property
     def dims(self):
-        """
-        Mapping from dimension names to Axis (AxisFloat, AxisInt or AxisTime).
-        """
+        """Mapping from dimension names to Axis (AxisFloat, AxisInt or AxisTime)."""
 
         axfac = AxisFactory()
 
@@ -59,8 +71,8 @@ class DaDsMixin:
                     keep_as_dim: bool = False,
                     **dims_kws: INT_FLOAT_ANY2DT,
                     ) -> Union[xr.DataArray, xr.Dataset]:
-        """
-        Select the nearest data point to the specified value along the dimension.
+        """Select the nearest data point to the specified value along the
+        dimension.
 
         Parameters
         ----------
@@ -98,8 +110,7 @@ class DaDsMixin:
     def sel_around(self,
                    **dims_kws: INT_FLOAT_ANY2DT
                    ) -> Union[xr.DataArray, xr.Dataset]:
-        """
-        Select the two data points around the specified value along the
+        """Select the two data points around the specified value along the
         dimension.
 
         Parameters
@@ -132,8 +143,7 @@ class DaDsMixin:
                   force_inclusive: bool = False,
                   **dims_kws: slice,
                   ) -> Union[xr.DataArray, xr.Dataset]:
-        """
-        Select a slice along the specified dimension.
+        """Select a slice along the specified dimension.
 
         Parameters
         ----------
@@ -190,18 +200,6 @@ class BrDA(DaDsMixin):
 
         return next(filter(None, names))
 
-    def err(self, msg: str) -> None:
-        """Raise a ValueError with message msg."""
-        raise ValueError(f"DataArray '{self.name}': {msg}")
-
-    def info(self, msg: str) -> None:
-        """Info message msg."""
-        log.info(f"DataArray '{self.name}': {msg}")
-
-    def warn(self, msg: str) -> None:
-        """Warning message msg."""
-        log.warning(f"DataArray '{self.name}': {msg}")
-
     def load(self) -> xr.DataArray:
 
         # just return it if it was already loaded
@@ -243,7 +241,7 @@ class BrDA(DaDsMixin):
         return {dim: length_to_slices_of_indexes(self.da[dim].size, step)
                 for dim, step in dims_steps.items()}
 
-    def _tqdm_description(self, pbar, d: dict) -> str:
+    def _lbs_tqdm_description(self, pbar, d: dict) -> str:
 
         slices_repr = ", ".join(
             [f"{dim}:[{slc.start}:{slc.stop})/{self.da[dim].size}"
@@ -281,12 +279,12 @@ class BrDA(DaDsMixin):
 
             das = []
             for d in slices:
-                pbar.set_description(self._tqdm_description(pbar, d))
+                pbar.set_description(self._lbs_tqdm_description(pbar, d))
                 das.append(self.da.isel(**d).compute())
                 # time.sleep(1)
                 pbar.update(1)
 
-            pbar.set_description(self._tqdm_description(pbar, d))
+            pbar.set_description(self._lbs_tqdm_description(pbar, d))
 
             da = xr.combine_by_coords(das, combine_attrs="identical")
 
@@ -333,8 +331,7 @@ class BrDA(DaDsMixin):
 
     @property
     def is_numeric(self) -> bool:
-        """
-        Check whether the DataArray is of a numeric dtype.
+        """Check whether the DataArray is of a numeric dtype.
 
         Returns
         -------
@@ -348,8 +345,7 @@ class BrDA(DaDsMixin):
                                              dim: str,
                                              position: str = "first",
                                              ) -> xr.DataArray:
-        """
-        Get the index of the first or last valid value along a specific
+        """Get the index of the first or last valid value along a specific
         dimension.
 
         Parameters
@@ -383,8 +379,7 @@ class BrDA(DaDsMixin):
                                     dim: str,
                                     position: str = "first",
                                     ) -> xr.DataArray:
-        """
-        Get the first or last valid value along a specific dimension.
+        """Get the first or last valid value along a specific dimension.
 
         Parameters
         ----------
@@ -533,8 +528,7 @@ class BrDA(DaDsMixin):
               pref_dims: Optional[list[Union[str, list]]] = None,
               size: Union[int, str] = 4096
               ) -> xr.DataArray:
-        """
-        Set the chunks.
+        """Set the chunks.
 
         This is useful to improve IO when writing/reading a NetCDF file. The
         chunks tell how the N dimension data matrix will be split in smaller
@@ -720,15 +714,3 @@ class BrDS(DaDsMixin):
                  "unnamed"]
 
         return next(filter(None, names))
-
-    def err(self, msg: str) -> None:
-        """Raise a ValueError with message msg."""
-        raise ValueError(f"Dataset '{self.name}': {msg}")
-
-    def info(self, msg: str) -> None:
-        """Info message msg."""
-        log.info(f"Dataset '{self.name}': {msg}")
-
-    def warn(self, msg: str) -> None:
-        """Warning message msg."""
-        log.warning(f"Dataset '{self.name}': {msg}")
