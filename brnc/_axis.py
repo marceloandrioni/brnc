@@ -20,15 +20,12 @@ class AxisFloat:
 
     def __repr__(self) -> str:
 
-        s = (f"{self.__class__.__name__}: {self.values.size} elements from "
-             f"{self.first} to {self.last}")
+        step = (f"regular step {self.step}"
+                if self.regular
+                else "irregular steps")
 
-        if self.regular:
-            s += f" with regular step {self.step}"
-        else:
-            s += " with irregular steps"
-
-        return s
+        return (f"{self.__class__.__name__}: {self.values.size} elements from"
+                f" {self.first} to {self.last} with {step}")
 
     @property
     def values(self) -> np.ndarray:

@@ -324,6 +324,8 @@ def length_to_slices_of_indexes(length: int, step: int) -> Iterator[slice]:
 
     """
 
+    # Note: >= python 3.12 has itertools.batched tha does the same as np.array_split
+
     _ = int(str(length))
     _ = int(str(step))
 

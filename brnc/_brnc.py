@@ -132,6 +132,13 @@ class DaDsMixin:
 
         """
 
+        # @TODO: add option to allow n points around. Useful to e.g.: get the
+        # 9 points around and select the highest value to represent the small
+        # region. Useful to no miss eddies by 1 or 2 points or to plot a spatial
+        # cloud of forecast around the desired locations.
+        # In the ds.grect.sel_around, allow selection of a region in km around
+        # the desired location.
+
         dims = self.dims
 
         isel_kwargs = {dim: dims[dim].find_indexes_around(value)
@@ -256,6 +263,9 @@ class BrDA(DaDsMixin):
         return f"{slices_repr}: {perc:.0f}%"
 
     def load_by_step(self, **dims_kws: int) -> xr.DataArray:
+
+        # @todo: option to pass a mask and not download data if all points in
+        # chunk are nan (e.g. points over land)
 
         # just return it if it was already loaded
         if self.da._in_memory:
@@ -413,6 +423,42 @@ class BrDA(DaDsMixin):
                                           ) -> xr.DataArray:
 
         raise NotImplementedError
+
+        # also, create a separate method to raise if all values are the same
+        # (Inf, NaN, 0, 1, etc). This may indicate an error in the download.
+        # A helpful check would be
+        # np.isinf(da).sum() > 0: raise   # NaNs are ok, Inf is not allowed
+        # np.isfinite(da).sum() == 0: raise   # all Inf or all NaN
+        # np.all(np.isclose(da.values.flat[0], da.values)): raise   # all the same value
+        # another test is to check if all values are the same (Inf, NaN, valid value, etc)
+        # in a slice along a dimension, e.g:
+        # for time in times:
+        #   if all(da.sel(time).values)
+        #       raise
+        #
+        # Note: I saw this happening in a NCOM HYCOM file
+        #
+        # maybe even allow this on two or more dimesnions
+        # for dim in ["time", "depth"]:
+        #     for x in ds[dim]:
+        #        if all_the_same:
+        #           raise
+        #
+        # regarding the presence of inf, an additional test is needed
+        # a dataarray may have a very large value (i.e.: 9.9692100e+36) that is
+        # still in the valid range for the datatype, e.g.:
+        # >>> np.finfo(da.dtype)
+        # finfo(resolution=1e-06, min=-3.4028235e+38, max=3.4028235e+38, dtype=float32)
+        # so it's not possible to assume that the data is correct or no.
+        # However, when the data is saved to disk using least_significant_digit,
+        # the precision loss will convert the data in inf, with the warning:
+        # .../lib/python3.10/site-packages/netCDF4/utils.py:74: RuntimeWarning: overflow encountered in multiply
+        #   datout = np.around(scale*data)/scale
+        # so the test should be to use the code in utils.py (_quantize) and check
+        # if the data will become Inf after least_significant_digit application
+        # and raise an error. The same thing my happen when saving the data in
+        # disk to other dtypes (float to int). Find where in the main 
+        # netcdf lib code this is done and simulate.
 
         # True if the value behaviour is persistent along dimension, e.g.:
         # if all values along dim are nan/inf -> True
